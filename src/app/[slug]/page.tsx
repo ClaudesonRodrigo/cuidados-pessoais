@@ -2,11 +2,11 @@
 'use client';
 
 import { useEffect, useState, use } from 'react';
-import { getPageDataBySlug, PageData, LinkData, incrementLinkClick } from "@/lib/pageService";
+import { getPageDataBySlug, PageData, LinkData, incrementLinkClick, generateVCardBlob } from "@/lib/pageService";
 import { notFound } from "next/navigation";
 import Image from 'next/image';
 import Link from 'next/link';
-import { FaGithub, FaInstagram, FaLinkedin, FaGlobe, FaTwitter, FaFacebook, FaYoutube, FaTiktok, FaWhatsapp, FaEnvelope, FaLink, FaCheckCircle } from 'react-icons/fa';
+import { FaGithub, FaInstagram, FaLinkedin, FaGlobe, FaTwitter, FaFacebook, FaYoutube, FaTiktok, FaWhatsapp, FaEnvelope, FaLink, FaCheckCircle, FaUserPlus } from 'react-icons/fa';
 import { motion, Variants } from 'framer-motion';
 
 const iconMap: { [key: string]: React.ElementType } = {
@@ -26,7 +26,7 @@ const iconMap: { [key: string]: React.ElementType } = {
 
 // Estende o tipo PageData para incluir a imagem de fundo
 interface ExtendedPageData extends PageData {
-  backgroundImage?: string; // URL da imagem de fundo personalizada
+  backgroundImage?: string;
 }
 
 export default function UserPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -44,12 +44,10 @@ export default function UserPage({ params }: { params: Promise<{ slug: string }>
         notFound();
       } else {
         setPageData(data);
-        // Limpa classes antigas
         document.documentElement.className = "";
 
         const theme = data.theme || 'light';
 
-        // Se tiver imagem personalizada, forçamos o tema 'custom-image'
         if (data.backgroundImage) {
           document.documentElement.classList.add('theme-custom-image');
         } else {
@@ -66,28 +64,37 @@ export default function UserPage({ params }: { params: Promise<{ slug: string }>
   }, [pageData]);
 
   const handleLinkClick = (link: LinkData) => {
-    // Chama a função de incremento sem await para não travar a navegação
     incrementLinkClick(resolvedParams.slug, link.url);
+  };
+
+  const handleSaveContact = () => {
+    if (!pageData) return;
+    const blob = generateVCardBlob(pageData);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${pageData.title.replace(/\s+/g, '_')}_contato.vcf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   if (!pageData) return <div className="flex justify-center items-center min-h-screen"><p className="animate-pulse">Carregando...</p></div>;
 
-  // Lógica para identificar visualmente se é Premium baseado no tema ou se tem imagem de fundo
   const isProTheme = ['realtor', 'restaurant', 'mechanic', 'influencer', 'ocean', 'sunset', 'forest', 'bubblegum', 'developer'].includes(pageData.theme || '') || !!pageData.backgroundImage;
 
-  // Variantes de animação para o container (lista de links)
   const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
       transition: {
-        staggerChildren: 0.1, // Atraso entre cada filho
-        delayChildren: 0.3,   // Atraso inicial antes de começar
+        staggerChildren: 0.1,
+        delayChildren: 0.3,
       }
     }
   };
 
-  // Variantes de animação para cada item (link)
   const itemVariants: Variants = {
     hidden: { y: 20, opacity: 0 },
     visible: {
@@ -118,7 +125,6 @@ export default function UserPage({ params }: { params: Promise<{ slug: string }>
                 className="rounded-full border-4 border-theme-image-border shadow-2xl object-cover w-32 h-32"
                 priority
               />
-              {/* Selo Pro */}
               {isProTheme && (
                 <div className="absolute bottom-1 right-1 bg-blue-500 text-white rounded-full p-1.5 border-2 border-white shadow-sm" title="Verificado / Pro">
                   <FaCheckCircle size={14} />
@@ -137,9 +143,15 @@ export default function UserPage({ params }: { params: Promise<{ slug: string }>
           <p className="mt-2 text-sm md:text-base text-theme-text-muted max-w-xs mx-auto leading-relaxed opacity-90">
             {pageData.bio}
           </p>
+
+          <button 
+            onClick={handleSaveContact}
+            className="mt-6 flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/20 text-theme-text px-4 py-2 rounded-full text-sm font-medium hover:bg-white/20 transition-all shadow-sm"
+          >
+             <FaUserPlus /> Salvar na Agenda
+          </button>
         </div>
 
-        {/* Container de Links com Animação Stagger */}
         <motion.div
           className="space-y-4"
           variants={containerVariants}

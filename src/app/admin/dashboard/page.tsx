@@ -10,7 +10,7 @@ import {
   updatePageTheme, updatePageBackground, updateProfileImage, updatePageProfileInfo,
   PageData, LinkData, UserData, findUserByEmail, updateUserPlan
 } from '@/lib/pageService';
-import { FaLock, FaSearch, FaCamera, FaUserCog, FaArrowLeft, FaImage, FaSave } from 'react-icons/fa';
+import { FaLock, FaSearch, FaCamera, FaUserCog, FaArrowLeft, FaImage, FaSave, FaQrcode, FaChartLine } from 'react-icons/fa';
 import Image from 'next/image';
 
 // --- Imports para Drag and Drop ---
@@ -31,8 +31,11 @@ import {
 } from '@dnd-kit/sortable';
 import { SortableLinkItem } from '@/components/SortableLinkItem';
 
+// --- Libs Novas ---
+import { QRCodeCanvas } from 'qrcode.react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+
 // --- CONFIGURAÇÃO DO CLOUDINARY ---
-// Substitua pelos seus dados reais
 const CLOUDINARY_CLOUD_NAME = "dhzzvc3vl"; 
 const CLOUDINARY_UPLOAD_PRESET = "links-page-pro"; 
 // ----------------------------------
@@ -84,14 +87,20 @@ export default function DashboardPage() {
   const [editingIcon, setEditingIcon] = useState('');
   const [copyButtonText, setCopyButtonText] = useState('Copiar');
 
+  // Estado para a imagem de fundo personalizada
+  const [customBgUrl, setCustomBgUrl] = useState('');
+
   // Estados para upload
   const [isUploadingProfile, setIsUploadingProfile] = useState(false);
   const [isUploadingBg, setIsUploadingBg] = useState(false);
+  
+  // Estado QR Code
+  const [showQRCode, setShowQRCode] = useState(false);
 
   // Verifica se é Admin
   const isAdmin = userData?.role === 'admin';
 
-  // Verifica se o plano é Pro (Se for Admin editando, libera tudo como se fosse Pro)
+  // Verifica se o plano é Pro
   const isProPlan = targetUserId ? true : (userData?.plan === 'pro');
 
   // Estados Admin (Busca)
@@ -107,7 +116,7 @@ export default function DashboardPage() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5, // Só ativa o drag se mover 5px (evita cliques acidentais)
+        distance: 5, 
       },
     }),
     useSensor(KeyboardSensor, {
@@ -119,25 +128,20 @@ export default function DashboardPage() {
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
-    // Se soltou sobre um item diferente do que pegou
     if (over && active.id !== over.id && pageData?.links) {
       setPageData((prev) => {
         if (!prev) return null;
         
-        // Encontra os índices usando o ID (url + index) que definimos no componente SortableLinkItem
         const oldIndex = prev.links.findIndex((link, idx) => (link.url + idx) === active.id);
         const newIndex = prev.links.findIndex((link, idx) => (link.url + idx) === over.id);
 
-        // Reordena o array localmente
         const newLinks = arrayMove(prev.links, oldIndex, newIndex);
         
-        // Atualiza a propriedade 'order' baseada na nova posição do array para persistência
         const reorderedLinks = newLinks.map((link, index) => ({
           ...link,
           order: index + 1
         }));
 
-        // Dispara a atualização no Firebase em background
         if (pageSlug) {
             updateLinksOnPage(pageSlug, reorderedLinks).catch(err => {
                 console.error("Erro ao salvar ordem:", err);
@@ -155,9 +159,7 @@ export default function DashboardPage() {
 
   // --- FUNÇÕES ---
 
-  // Busca os dados da página (do usuário logado OU do usuário alvo se for admin)
   const fetchPageData = useCallback(async () => {
-    // Define qual ID vamos buscar: o alvo (se houver) ou o logado
     const idToFetch = targetUserId || user?.uid;
 
     if (idToFetch) {
@@ -166,7 +168,6 @@ export default function DashboardPage() {
       if (result) {
         const data = result.data as PageData;
         
-        // Ordena os links antes de setar o estado para garantir que apareçam na ordem correta
         if (data.links) {
             data.links.sort((a, b) => (a.order || 0) - (b.order || 0));
         }
@@ -174,10 +175,14 @@ export default function DashboardPage() {
         setPageData(data);
         setPageSlug(result.slug);
         
-        // Carrega os textos para edição
         setEditingProfileTitle(data.title || '');
         setEditingProfileBio(data.bio || '');
 
+        if (data.backgroundImage) {
+          setCustomBgUrl(data.backgroundImage);
+        } else {
+          setCustomBgUrl('');
+        }
       } else {
         console.error("Não foi possível carregar os dados da página do usuário.");
         setPageData(null);
@@ -205,7 +210,6 @@ export default function DashboardPage() {
     await signOutUser();
   };
 
-  // --- MODO ADMIN: Gerenciar Página ---
   const handleManageUser = (uid: string, email: string | undefined) => {
     setTargetUserId(uid);
     setTargetUserEmail(email || 'Cliente');
@@ -218,9 +222,7 @@ export default function DashboardPage() {
   const handleExitAdminMode = () => {
     setTargetUserId(null);
     setTargetUserEmail(null);
-    // O useEffect vai disparar fetchPageData novamente com user.uid
   };
-  // -----------------------------------
 
   const generateWhatsAppLink = (planType: 'Mensal' | 'Anual', price: string) => {
     const message = `Olá! Gostaria de fazer o upgrade para o plano Pro ${planType} (R$${price}).`;
@@ -269,7 +271,7 @@ export default function DashboardPage() {
       await fetchPageData();
     } catch (error) {
       console.error("Erro ao excluir link:", error);
-      alert("Falha ao excluir o link. Verifique o console ou tente novamente.");
+      alert("Falha ao excluir o link.");
     }
   };
 
@@ -331,7 +333,6 @@ export default function DashboardPage() {
     const theme = themes.find(t => t.name === themeName);
     if (!theme) return;
 
-    // Se for Admin editando, ignora restrição. Se for usuário normal, verifica plano.
     if (theme.isPro && !isProPlan) {
       alert('Este é um tema Pro! Faça upgrade para usá-lo.');
       return;
@@ -351,7 +352,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Função genérica de upload para o Cloudinary (SEM AXIOS, usando FETCH)
   const uploadToCloudinary = async (file: File): Promise<string> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -389,7 +389,7 @@ export default function DashboardPage() {
       setPageData(prev => prev ? { ...prev, profileImageUrl: imageUrl } : null);
       alert("Foto de perfil atualizada com sucesso!");
     } catch (error) {
-        console.error(error); // CORREÇÃO: Usando a variável erro para log
+        console.error(error);
         alert("Erro ao atualizar foto de perfil.");
     } finally {
       setIsUploadingProfile(false);
@@ -412,14 +412,13 @@ export default function DashboardPage() {
       setPageData(prev => prev ? { ...prev, backgroundImage: imageUrl } : null);
       alert("Imagem de fundo atualizada com sucesso!");
     } catch (error) {
-        console.error(error); // CORREÇÃO: Usando a variável erro para log
+        console.error(error);
         alert("Erro ao atualizar imagem de fundo.");
     } finally {
       setIsUploadingBg(false);
     }
   };
 
-  // --- SALVAR TEXTOS (NOVO) ---
   const handleSaveProfileInfo = async () => {
     if (!pageSlug) return;
     try {
@@ -427,7 +426,7 @@ export default function DashboardPage() {
       setPageData(prev => prev ? { ...prev, title: editingProfileTitle, bio: editingProfileBio } : null);
       alert("Informações salvas!");
     } catch (error) {
-        console.error(error); // CORREÇÃO: Usando a variável erro para log
+        console.error(error);
         alert("Erro ao salvar informações."); 
     }
   };
@@ -481,9 +480,14 @@ export default function DashboardPage() {
     return null;
   }
 
+  // Preparar dados para o gráfico
+  const chartData = pageData?.links?.map(link => ({
+    name: link.title,
+    cliques: link.clicks || 0
+  })) || [];
+
   return (
     <div className="min-h-screen bg-gray-50 relative">
-      {/* BARRA DE AVISO DO MODO ADMIN */}
       {targetUserId && (
         <div className="bg-red-600 text-white px-4 py-3 shadow-md sticky top-0 z-50">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
@@ -533,7 +537,6 @@ export default function DashboardPage() {
               </span>
             </div>
 
-            {/* Seção de Foto de Perfil */}
             <div className="flex items-center gap-4">
               <div className="relative group">
                 {pageData?.profileImageUrl ? (
@@ -566,39 +569,80 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
-              <div className="text-sm text-gray-500">
-                <p>Alterar foto</p>
-                <p className="text-xs">(Max 5MB)</p>
-              </div>
             </div>
           </div>
 
           <p className="text-gray-700 mb-2">
             Gerencie sua página de links abaixo.
           </p>
-          {isLoadingData && !pageData && <p className="text-sm text-yellow-600">Carregando dados da sua página...</p>}
-          {!isLoadingData && !pageData && !isAdmin && <p className="text-sm text-red-600">Não foi possível carregar os dados da sua página. Tente recarregar.</p>}
         </div>
+
+        {/* --- SEÇÃO DE ANALYTICS (GRÁFICOS) --- */}
+        {pageData?.links && pageData.links.length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow mb-8">
+                <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <FaChartLine className="text-blue-600" /> Desempenho dos Links
+                    {!isProPlan && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">Prévia</span>}
+                </h3>
+                <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData}>
+                            <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}`} />
+                            <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '8px' }} />
+                            <Bar dataKey="cliques" radius={[4, 4, 0, 0]}>
+                                {chartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={index % 2 === 0 ? "#2563eb" : "#3b82f6"} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        )}
 
         {pageSlug && (
           <>
             <div className="bg-white p-6 rounded-lg shadow mb-8">
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Sua Página está no Ar!</h3>
-              <p className="text-gray-600 mb-4">Compartilhe este link com seu público:</p>
-              <div className="flex flex-col sm:flex-row items-center gap-2 p-3 bg-gray-100 rounded-md w-full">
+              
+              <div className="flex flex-col sm:flex-row items-center gap-2 p-3 bg-gray-100 rounded-md w-full mb-4">
                 <span className="text-blue-600 truncate font-mono text-sm w-full block">
                   {`${typeof window !== 'undefined' ? window.location.origin : ''}/${pageSlug}`}
                 </span>
                 <button
                   onClick={handleCopyUrl}
-                  className={`w-full sm:w-auto sm:ml-auto text-white font-medium py-2 px-4 rounded-md text-sm transition-all duration-200 ease-in-out whitespace-nowrap bg-blue-600 hover:bg-blue-700`}
+                  className={`w-full sm:w-auto text-white font-medium py-2 px-4 rounded-md text-sm transition-all duration-200 bg-blue-600 hover:bg-blue-700`}
                 >
                   {copyButtonText}
                 </button>
+                <button
+                    onClick={() => setShowQRCode(!showQRCode)}
+                    className="w-full sm:w-auto bg-gray-800 text-white font-medium py-2 px-4 rounded-md text-sm hover:bg-gray-900 flex items-center justify-center gap-2"
+                >
+                    <FaQrcode /> QR Code
+                </button>
               </div>
+
+              {/* MODAL QR CODE */}
+              {showQRCode && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowQRCode(false)}>
+                      <div className="bg-white p-6 rounded-xl shadow-2xl text-center max-w-sm w-full animate-in fade-in zoom-in duration-200" onClick={(e) => e.stopPropagation()}>
+                          <h3 className="text-lg font-bold mb-4">Seu QR Code</h3>
+                          <div className="bg-white p-2 inline-block rounded-lg shadow-inner mb-4 border border-gray-200">
+                              <QRCodeCanvas 
+                                  value={`${typeof window !== 'undefined' ? window.location.origin : ''}/${pageSlug}`} 
+                                  size={200}
+                                  level={"H"}
+                              />
+                          </div>
+                          <p className="text-sm text-gray-500 mb-4">Escaneie para acessar seu perfil.</p>
+                          <button onClick={() => setShowQRCode(false)} className="w-full bg-gray-200 py-2 rounded-lg font-medium hover:bg-gray-300">Fechar</button>
+                      </div>
+                  </div>
+              )}
             </div>
 
-            {/* --- NOVA SEÇÃO: INFORMAÇÕES DO PERFIL --- */}
             <div className="bg-white p-6 rounded-lg shadow mb-8">
               <h3 className="text-xl font-semibold text-gray-900 mb-4">Informações do Perfil</h3>
               <div className="space-y-4">
@@ -628,13 +672,11 @@ export default function DashboardPage() {
                 </button>
               </div>
             </div>
-            {/* ----------------------------------------- */}
 
             <div className="bg-white p-6 rounded-lg shadow mb-8" id="appearance-section">
               <h3 className="text-xl font-semibold text-gray-900 mb-4">Aparência</h3>
               <p className="text-gray-600 mb-4">Escolha um tema para sua página pública.</p>
               
-              {/* Upload Fundo */}
               <div className="mb-6 p-4 bg-gray-50 rounded border">
                  <h4 className="font-medium mb-2 flex items-center gap-2"><FaImage /> Fundo Personalizado {!isProPlan && <FaLock className="text-gray-400 w-3 h-3" />}</h4>
                  <input type="file" accept="image/*" onChange={handleBackgroundImageUpload} disabled={!isProPlan || isUploadingBg} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
@@ -670,7 +712,6 @@ export default function DashboardPage() {
                 })}
               </div>
 
-              {/* Banner Upgrade */}
               {!isProPlan && !targetUserId && (
                 <div className="mt-8 pt-6 border-t border-gray-200" id="upgrade-section">
                   <h4 className="text-lg font-semibold text-center text-gray-800 mb-4">
@@ -742,7 +783,6 @@ export default function DashboardPage() {
                     >
                       <div className="space-y-3">
                         {pageData.links.map((link, index) => {
-                           // Se estiver editando ESTE item específico, mostramos o form antigo
                            if (editingIndex === index) {
                              return (
                                <div key={link.url + index} className="p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-inner mb-3">
@@ -771,7 +811,6 @@ export default function DashboardPage() {
                              );
                            }
 
-                           // Se NÃO estiver editando, mostra o item arrastável
                            return (
                              <SortableLinkItem 
                                key={link.url + index}
@@ -794,7 +833,6 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* --- PAINEL ADMIN (Busca de Usuário) --- */}
         {isAdmin && !targetUserId && (
           <div className="mt-12 border-t-2 border-red-600 pt-8">
             <h3 className="text-2xl font-bold text-red-700 mb-6 text-center">
@@ -847,7 +885,6 @@ export default function DashboardPage() {
                     </span>
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {/* Botões de Plano */}
                     <button
                       onClick={() => handleChangePlan(foundUser.plan === 'free' ? 'pro' : 'free')}
                       disabled={isUpdatingPlan}
@@ -856,7 +893,6 @@ export default function DashboardPage() {
                       {foundUser.plan === 'free' ? 'Ativar Pro' : 'Desativar Pro'}
                     </button>
                     
-                    {/* NOVO: Botão Gerenciar Página */}
                     <button 
                       onClick={() => handleManageUser(foundUser.uid, foundUser.email)}
                       className="px-3 py-1 rounded bg-blue-600 text-white text-sm flex items-center gap-1 hover:bg-blue-700"

@@ -228,6 +228,29 @@ export const updatePageProfileInfo = async (pageSlug: string, title: string, bio
   }
 };
 
+// --- FUNÇÃO AUXILIAR: Gerar VCard (Cartão de Visita) ---
+export const generateVCardBlob = (pageData: PageData): Blob => {
+  // Tenta encontrar um número de telefone nos links (para Whatsapp/Tel)
+  const phoneLink = pageData.links.find(l => l.url.includes('wa.me') || l.url.includes('tel:'));
+  const phoneNumber = phoneLink ? phoneLink.url.split('/').pop()?.replace(/\D/g, '') : '';
+  
+  // Tenta encontrar email
+  const emailLink = pageData.links.find(l => l.url.includes('mailto:'));
+  const email = emailLink ? emailLink.url.replace('mailto:', '') : '';
+
+  const vcard = `BEGIN:VCARD
+VERSION:3.0
+FN:${pageData.title}
+N:;${pageData.title};;;
+NOTE:${pageData.bio}
+${phoneNumber ? `TEL;TYPE=CELL:${phoneNumber}` : ''}
+${email ? `EMAIL;TYPE=WORK:${email}` : ''}
+URL:${typeof window !== 'undefined' ? window.location.href : ''}
+END:VCARD`;
+
+  return new Blob([vcard], { type: "text/vcard;charset=utf-8" });
+};
+
 // --- FUNÇÕES ADMIN ---
 
 export const findUserByEmail = async (email: string): Promise<(UserData & { uid: string }) | null> => {
