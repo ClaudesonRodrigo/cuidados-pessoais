@@ -13,7 +13,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@ducanh2912/next-pwa": "^10.2.9",
-    "firebase": "^12.4.0",
+    "firebase": "^12.6.0",
     "framer-motion": "^12.23.24",
     "next": "^16.0.7",
     "qrcode.react": "^4.2.0",
