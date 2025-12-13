@@ -78,22 +78,41 @@ export const getPageDataForUser = async (userId: string): Promise<{ slug: string
   }
 };
 
+// No arquivo src/lib/pageService.ts
+
 export const getPageDataBySlug = async (slug: string): Promise<DocumentData | null> => {
   try {
+    // 1. Busca o Cardápio (Agora é público pelas regras do Firebase)
     const pageDocRef = doc(db, "pages", slug);
     const pageDocSnap = await getDoc(pageDocRef);
+    
     if (!pageDocSnap.exists()) return null;
 
     const pageData = pageDocSnap.data();
+    let plan = 'free'; // Padrão
+
+    // 2. Tenta descobrir o plano do dono
     if (pageData.userId) {
-        const userDocRef = doc(db, "users", pageData.userId);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-            return { ...pageData, plan: userDocSnap.data().plan || 'free' };
+        try {
+            const userDocRef = doc(db, "users", pageData.userId);
+            const userDocSnap = await getDoc(userDocRef);
+            if (userDocSnap.exists()) {
+                plan = userDocSnap.data().plan || 'free';
+            }
+        } catch (error) {
+            // SE FALHAR (ERRO DE PERMISSÃO), NÃO FAZ NADA!
+            // O visitante não tem permissão de ler o 'users' do dono, 
+            // então a gente ignora o erro e segue mostrando o cardápio como 'free'.
+            // Isso evita que a tela fique piscando/travada.
+            console.log("Visitante acessando: não foi possível ler detalhes do dono (OK).");
         }
     }
-    return { ...pageData, plan: 'free' };
-  } catch (error) { return null; }
+
+    return { ...pageData, plan }; 
+  } catch (error) {
+    console.error("Erro fatal ao buscar página:", error);
+    return null;
+  }
 };
 
 // --- Funções de Escrita ---
