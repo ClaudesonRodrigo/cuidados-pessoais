@@ -10,19 +10,20 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  serverTimestamp 
+  serverTimestamp,
+  Timestamp 
 } from "firebase/firestore";
 import { auth, db } from "./firebaseClient";
 
-// Função para gerar Slug a partir do nome
+// Função para gerar Slug
 const generateSlug = (name: string) => {
   return name
     .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove acentos
-    .replace(/[^a-z0-9]/g, "-") // Troca espaços/símbolos por traço
-    .replace(/-+/g, "-") // Remove traços duplicados
-    .replace(/^-|-$/g, "") // Remove traços no início/fim
-    + "-" + Math.floor(Math.random() * 1000); // Adiciona número aleatório para garantir unicidade
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    + "-" + Math.floor(Math.random() * 1000);
 };
 
 export const signInWithGoogle = async () => {
@@ -31,39 +32,45 @@ export const signInWithGoogle = async () => {
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
 
-    // Verifica se o usuário já existe no Firestore
     const userDocRef = doc(db, "users", user.uid);
     const userDocSnap = await getDoc(userDocRef);
 
     if (!userDocSnap.exists()) {
-      // --- USUÁRIO NOVO: CRIA TUDO AGORA ---
+      // --- USUÁRIO NOVO: COMEÇA COM 7 DIAS DE PRO ---
       
       const newSlug = generateSlug(user.displayName || "restaurante");
+      
+      // Calcula a data de expiração (Hoje + 7 dias)
+      const trialDate = new Date();
+      trialDate.setDate(trialDate.getDate() + 7);
+      const trialTimestamp = Timestamp.fromDate(trialDate);
 
-      // 1. Cria o documento do Usuário
+      // 1. Cria o Usuário PRO (Trial)
       await setDoc(userDocRef, {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName,
         photoURL: user.photoURL,
         pageSlug: newSlug,
-        plan: 'free', // Começa como Free
+        plan: 'pro', // Começa PRO!
+        trialDeadline: trialTimestamp, // Data que acaba a mamata
         role: 'user',
         createdAt: serverTimestamp(),
       });
 
-      // 2. CRIA O CARDÁPIO (PÁGINA) AUTOMATICAMENTE
-      // Isso evita o erro 404 na página pública!
+      // 2. Cria o Cardápio PRO (Trial)
       const pageDocRef = doc(db, "pages", newSlug);
       await setDoc(pageDocRef, {
         userId: user.uid,
         slug: newSlug,
         title: user.displayName || "Meu Restaurante",
         bio: "Bem-vindo ao nosso cardápio digital!",
-        links: [], // Começa vazio
+        links: [],
         theme: "light",
+        plan: 'pro', // Começa PRO!
+        trialDeadline: trialTimestamp, // Data que acaba
         createdAt: serverTimestamp(),
-        isOpen: true // Já nasce aberto
+        isOpen: true
       });
     }
 

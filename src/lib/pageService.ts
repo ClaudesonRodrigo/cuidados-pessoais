@@ -2,10 +2,11 @@
 
 import {
   doc, getDoc, updateDoc, arrayUnion, arrayRemove, DocumentData,
-  collection, query, where, getDocs, orderBy, limit
+  collection, query, where, getDocs, orderBy, limit, Timestamp
 } from "firebase/firestore";
 import { db } from "./firebaseClient";
 
+// --- TIPOS ---
 export type LinkData = {
   title: string;
   url?: string;
@@ -31,7 +32,8 @@ export type PageData = {
   theme?: string;
   userId: string;
   slug: string;
-  plan?: string; // O plano agora vive aqui também!
+  plan?: string;
+  trialDeadline?: Timestamp; // Campo novo
   isOpen?: boolean;
   createdAt?: any;
 };
@@ -42,9 +44,23 @@ export type UserData = {
   displayName?: string;
   email?: string;
   role?: string;
+  trialDeadline?: Timestamp;
 };
 
-// --- Funções de Leitura ---
+// FUNÇÃO AUXILIAR: Verifica se o plano venceu
+const checkPlanValidity = (data: any) => {
+    if (data.plan === 'pro' && data.trialDeadline) {
+        const now = new Date();
+        const deadline = data.trialDeadline.toDate();
+        // Se a data de hoje for maior que o prazo, rebaixa para Free
+        if (now > deadline) {
+            return 'free'; 
+        }
+    }
+    return data.plan || 'free';
+};
+
+// --- LEITURA ---
 
 export const getRecentPages = async (): Promise<PageData[]> => {
   try {
@@ -53,7 +69,7 @@ export const getRecentPages = async (): Promise<PageData[]> => {
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => doc.data() as PageData);
   } catch (error) {
-    console.error("Erro ao buscar cardápios recentes:", error);
+    console.error("Erro ao buscar recentes:", error);
     return [];
   }
 };
@@ -74,8 +90,10 @@ export const getPageDataForUser = async (userId: string): Promise<{ slug: string
       const pagesSnap = await getDocs(q);
       if (!pagesSnap.empty) {
         const pageDoc = pagesSnap.docs[0];
-        // Sincroniza o plano do usuário com a página na leitura do admin
-        return { slug: pageDoc.id, data: { ...pageDoc.data(), plan: userData?.plan || 'free' } };
+        const pageData = pageDoc.data();
+        // Aplica a verificação de validade
+        const realPlan = checkPlanValidity(userData); 
+        return { slug: pageDoc.id, data: { ...pageData, plan: realPlan } };
       }
       return null;
     }
@@ -84,8 +102,10 @@ export const getPageDataForUser = async (userId: string): Promise<{ slug: string
     const pageDocSnap = await getDoc(pageDocRef);
 
     if (pageDocSnap.exists()) {
-       // Sincroniza o plano
-       return { slug: pageSlug, data: { ...pageDocSnap.data(), plan: userData?.plan || 'free' } };
+       const pageData = pageDocSnap.data();
+       // Aplica a verificação de validade baseada no User (que é a fonte da verdade)
+       const realPlan = checkPlanValidity(userData);
+       return { slug: pageSlug, data: { ...pageData, plan: realPlan } };
     }
     return null;
   } catch (error) {
@@ -98,23 +118,19 @@ export const getPageDataBySlug = async (slug: string): Promise<DocumentData | nu
   try {
     const pageDocRef = doc(db, "pages", slug);
     const pageDocSnap = await getDoc(pageDocRef);
-    
     if (!pageDocSnap.exists()) return null;
 
     const pageData = pageDocSnap.data();
+    
+    // Verifica a validade direto no objeto da página
+    const realPlan = checkPlanValidity(pageData);
 
-    // CORREÇÃO: Não tentamos mais ler o 'users' aqui, pois visitantes não têm permissão.
-    // Confiamos no campo 'plan' que agora está salvo dentro de 'pages' (via updateUserPlan).
-    // Se não tiver 'plan' na página, assume 'free'.
-    return { ...pageData, plan: pageData.plan || 'free' }; 
+    return { ...pageData, plan: realPlan }; 
 
-  } catch (error) {
-    console.error("Erro ao carregar slug:", error);
-    return null;
-  }
+  } catch (error) { return null; }
 };
 
-// --- Funções de Escrita ---
+// --- ESCRITA ---
 
 export const addLinkToPage = async (pageSlug: string, newLink: LinkData): Promise<void> => {
   const pageDocRef = doc(db, "pages", pageSlug);
@@ -144,13 +160,8 @@ export const updateProfileImage = async (pageSlug: string, imageUrl: string): Pr
 };
 
 export const updatePageProfileInfo = async (
-    pageSlug: string, 
-    title: string, 
-    bio: string, 
-    address: string, 
-    isOpen: boolean, 
-    whatsapp: string, 
-    pixKey: string
+    pageSlug: string, title: string, bio: string, address: string, 
+    isOpen: boolean, whatsapp: string, pixKey: string
 ): Promise<void> => {
   const dataToUpdate = { title, bio, address, isOpen, whatsapp, pixKey: pixKey || "" };
   await updateDoc(doc(db, "pages", pageSlug), dataToUpdate);
@@ -159,8 +170,7 @@ export const updatePageProfileInfo = async (
 export const incrementLinkClick = async (pageSlug: string, itemId: string): Promise<void> => {
   try {
     const pageDocRef = doc(db, "pages", pageSlug);
-    // Incremento de clique não precisa ler a página toda, otimização futura.
-    // Por enquanto mantemos a lógica segura.
+    // Otimização: Update direto se possível, mas mantemos leitura segura
     const pageSnap = await getDoc(pageDocRef);
     if (pageSnap.exists()) {
       const pageData = pageSnap.data() as PageData;
@@ -177,25 +187,21 @@ export const incrementLinkClick = async (pageSlug: string, itemId: string): Prom
 
 export const findUserByEmail = async (email: string): Promise<(UserData & { uid: string }) | null> => {
   if (!email) return null;
-  // NOTA: Para isso funcionar, as regras do Firestore devem permitir que usuários logados leiam a coleção 'users'.
   const q = query(collection(db, "users"), where("email", "==", email.trim()));
   const snapshot = await getDocs(q);
   return snapshot.empty ? null : { uid: snapshot.docs[0].id, ...(snapshot.docs[0].data() as UserData) };
 };
 
-// CORREÇÃO CRÍTICA: Atualiza o plano no USER e na PÁGINA
 export const updateUserPlan = async (userId: string, newPlan: 'free' | 'pro'): Promise<void> => {
-  // 1. Atualiza no User (Referência oficial)
-  await updateDoc(doc(db, "users", userId), { plan: newPlan });
+  // Quando o Admin muda o plano, removemos a data de expiração (vira vitalício ou assinatura mensal)
+  await updateDoc(doc(db, "users", userId), { plan: newPlan, trialDeadline: null });
 
-  // 2. Busca a página desse usuário para atualizar lá também
-  // (Isso permite que o cardápio público saiba que é PRO sem consultar o user privado)
   const pagesRef = collection(db, "pages");
   const q = query(pagesRef, where("userId", "==", userId));
   const snapshot = await getDocs(q);
 
   if (!snapshot.empty) {
       const pageId = snapshot.docs[0].id;
-      await updateDoc(doc(db, "pages", pageId), { plan: newPlan });
+      await updateDoc(doc(db, "pages", pageId), { plan: newPlan, trialDeadline: null });
   }
 };

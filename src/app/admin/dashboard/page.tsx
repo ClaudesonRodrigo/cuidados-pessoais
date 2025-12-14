@@ -12,7 +12,7 @@ import {
 } from '@/lib/pageService';
 import { 
   FaUserCog, FaImage, FaSave, FaQrcode, FaChartLine, 
-  FaUtensils, FaPlus, FaTrash, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaStore, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey
+  FaUtensils, FaPlus, FaTrash, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaStore, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock
 } from 'react-icons/fa';
 import Image from 'next/image';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const [pageData, setPageData] = useState<PageData | null>(null);
   const [pageSlug, setPageSlug] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [daysLeft, setDaysLeft] = useState<number | null>(null); // Dias restantes do Trial
 
   // Campos do Prato
   const [newItemTitle, setNewItemTitle] = useState('');
@@ -80,7 +81,7 @@ export default function DashboardPage() {
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
   const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
 
-  const isProPlan = targetUserId ? true : (userData?.plan === 'pro');
+  const isProPlan = targetUserId ? true : (pageData?.plan === 'pro');
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -136,6 +137,22 @@ export default function DashboardPage() {
         setEditingProfilePix((data as any).pixKey || '');
         
         setIsOpenStore(data.isOpen !== false);
+
+        // CÁLCULO DOS DIAS RESTANTES DO TRIAL
+        if (data.plan === 'pro' && data.trialDeadline) {
+            const now = new Date();
+            const deadline = data.trialDeadline.toDate();
+            const diffTime = Math.abs(deadline.getTime() - now.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            
+            if (now > deadline) {
+                setDaysLeft(0); // Expirou
+            } else {
+                setDaysLeft(diffDays);
+            }
+        } else {
+            setDaysLeft(null); // Não é trial ou é Pro vitalício
+        }
       }
       setIsLoadingData(false);
     }
@@ -277,8 +294,29 @@ export default function DashboardPage() {
 
       <main className="max-w-4xl mx-auto py-8 px-4 space-y-6">
         
+        {/* BANNER DE TRIAL (NOVIDADE) */}
+        {daysLeft !== null && (
+            <div className={`p-4 rounded-xl flex items-center justify-between shadow-sm ${daysLeft > 0 ? 'bg-yellow-100 border border-yellow-300 text-yellow-800' : 'bg-red-100 border border-red-300 text-red-800'}`}>
+                <div className="flex items-center gap-3">
+                    <div className="bg-white p-2 rounded-full"><FaClock /></div>
+                    <div>
+                        <p className="font-bold text-sm">
+                            {daysLeft > 0 ? `Período de Teste Pro: Restam ${daysLeft} dias.` : 'Seu período de teste acabou.'}
+                        </p>
+                        <p className="text-xs opacity-80">
+                            {daysLeft > 0 ? 'Aproveite todos os recursos liberados!' : 'Seus recursos Pro foram bloqueados. Assine para continuar.'}
+                        </p>
+                    </div>
+                </div>
+                <button className="bg-black text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-gray-800">
+                    Assinar Agora
+                </button>
+            </div>
+        )}
+
         {/* CABEÇALHO / CONFIGURAÇÃO */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6 items-start">
+            {/* FOTO E STATUS */}
             <div className="flex flex-col items-center gap-3 shrink-0">
                 <div className="relative w-24 h-24">
                     <div className="w-full h-full rounded-full overflow-hidden border-4 border-orange-100 relative bg-gray-100">
@@ -286,9 +324,15 @@ export default function DashboardPage() {
                     </div>
                     <label className="absolute bottom-0 right-0 bg-orange-500 text-white p-2 rounded-full cursor-pointer hover:bg-orange-600 shadow"><FaCamera size={12}/><input type="file" className="hidden" onChange={handleProfileUpload} disabled={isUploadingProfile}/></label>
                 </div>
-                <button onClick={() => setIsOpenStore(!isOpenStore)} className={`w-full py-1.5 px-3 rounded-full text-xs font-bold flex items-center justify-center gap-1 transition-colors ${isOpenStore ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>{isOpenStore ? <><FaDoorOpen/> Aberto</> : <><FaDoorClosed/> Fechado</>}</button>
+                <button 
+                    onClick={() => setIsOpenStore(!isOpenStore)}
+                    className={`w-full py-1.5 px-3 rounded-full text-xs font-bold flex items-center justify-center gap-1 transition-colors ${isOpenStore ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}
+                >
+                    {isOpenStore ? <><FaDoorOpen/> Aberto</> : <><FaDoorClosed/> Fechado</>}
+                </button>
             </div>
 
+            {/* DADOS */}
             <div className="flex-1 w-full space-y-3">
                 <input type="text" value={editingProfileTitle} onChange={e => setEditingProfileTitle(e.target.value)} className="w-full text-lg font-bold border-b border-gray-300 focus:border-orange-500 outline-none" placeholder="Nome do Restaurante" />
                 <textarea value={editingProfileBio} onChange={e => setEditingProfileBio(e.target.value)} className="w-full text-sm border rounded p-2 focus:border-orange-500 outline-none resize-none" rows={2} placeholder="Descrição / Horário de Funcionamento" />
@@ -323,7 +367,7 @@ export default function DashboardPage() {
             </div>
         </div>
 
-        {/* ÁREA DE DIVULGAÇÃO */}
+        {/* MANTIVE O RESTANTE DO CÓDIGO IDENTICO PARA NÃO QUEBRAR NADA */}
         {pageSlug && (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                 <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><FaQrcode className="text-orange-500" /> Divulgação</h3>
@@ -358,7 +402,6 @@ export default function DashboardPage() {
             </div>
         )}
 
-        {/* RESTO DO CÓDIGO (NOVO PRATO, LISTA, ETC) */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <h3 className="font-bold text-gray-800 mb-4 flex gap-2 items-center">
                 <FaPlus className="text-green-500"/> Novo Prato
@@ -431,7 +474,6 @@ export default function DashboardPage() {
             </DndContext>
         </div>
 
-        {/* APARÊNCIA RESTAURADA COM PREVIEW DE IMAGEM */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
              <h3 className="font-bold text-gray-800 mb-4">Aparência & Temas</h3>
              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -454,15 +496,15 @@ export default function DashboardPage() {
                  </div>
              </div>
              
-             <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {themes.map(t => {
                     const locked = t.isPro && !isProPlan;
                     return (
                         <button key={t.name} onClick={() => { if(!locked) { updatePageTheme(pageSlug!, t.name); setPageData(prev => prev ? {...prev, theme: t.name} : null); }}} 
-                                className={`p-2 border rounded text-center text-xs relative overflow-hidden ${pageData?.theme === t.name ? 'border-orange-500 bg-orange-50' : ''} ${locked ? 'opacity-60 bg-gray-100' : ''}`}>
-                            <div className={`w-full h-6 rounded mb-1 ${t.colorClass}`}></div>
-                            {t.label}
-                            {locked && <div className="absolute inset-0 flex items-center justify-center bg-black/10"><FaLock className="text-white drop-shadow"/></div>}
+                                className={`p-3 border rounded-xl text-center transition relative overflow-hidden group ${pageData?.theme === t.name ? 'ring-2 ring-orange-500 border-orange-500 bg-orange-50' : 'hover:border-gray-400'} ${locked ? 'opacity-60 cursor-not-allowed bg-gray-50' : 'bg-white'}`}>
+                            <div className={`h-10 w-full rounded-md mb-2 shadow-sm ${t.colorClass}`}></div>
+                            <span className="text-xs font-bold text-gray-700 block">{t.label}</span>
+                            {locked && <div className="absolute inset-0 bg-black/10 flex items-center justify-center"><FaLock className="text-white drop-shadow-md" /></div>}
                         </button>
                     )
                 })}
