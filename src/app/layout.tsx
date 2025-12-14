@@ -16,16 +16,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Meus Links Pro - Seus links em um só lugar",
-  description: "Crie sua página de links personalizada e compartilhe com o mundo.",
+  title: "Cardapio Digital -Aracaju",
+  description: "Crie seu Cardapio personalizado e compartilhe com seus Clientes.",
   manifest: "/manifest.json",
   icons: {
-    icon: '/favicon.ico',
+    icon: '/icon-192x192.png',
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Meus Links Pro",
+    title: "Cardapio Digital Pro",
   },
 };
 
