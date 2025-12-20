@@ -8,11 +8,12 @@ import { signOutUser } from '@/lib/authService';
 import {
   getPageDataForUser, addLinkToPage, deleteLinkFromPage, updateLinksOnPage,
   updatePageTheme, updatePageBackground, updateProfileImage, updatePageProfileInfo, updatePageCoupons,
+  getAllUsers, // <--- IMPORTADO AQUI
   PageData, LinkData, UserData, CouponData, findUserByEmail, updateUserPlan
 } from '@/lib/pageService';
 import { 
-  FaUserCog, FaImage, FaSave, FaQrcode, FaChartLine, FaTag, FaTrashAlt,
-  FaUtensils, FaPlus, FaTrash, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaStore, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock
+  FaUserCog, FaImage, FaSave, FaQrcode, FaTag, FaTrashAlt,
+  FaUtensils, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaStore, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch
 } from 'react-icons/fa';
 import Image from 'next/image';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -42,6 +43,9 @@ export default function DashboardPage() {
   const [pageSlug, setPageSlug] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  
+  // Lista de Usuários (Super Admin)
+  const [allUsers, setAllUsers] = useState<(UserData & { uid: string })[]>([]);
 
   // Campos do Prato
   const [newItemTitle, setNewItemTitle] = useState('');
@@ -51,7 +55,7 @@ export default function DashboardPage() {
   const [newItemImage, setNewItemImage] = useState('');
   const [isUploadingItemImg, setIsUploadingItemImg] = useState(false);
 
-  // Campos de Cupom (Novo)
+  // Campos de Cupom
   const [newCouponCode, setNewCouponCode] = useState('');
   const [newCouponValue, setNewCouponValue] = useState('');
   const [newCouponType, setNewCouponType] = useState<'percent' | 'fixed'>('percent');
@@ -79,7 +83,7 @@ export default function DashboardPage() {
   // Admin
   const isAdmin = userData?.role === 'admin';
   const [targetUserId, setTargetUserId] = useState<string | null>(null);
-  const [targetUserEmail, setTargetUserEmail] = useState<string | null>(null);
+  const [targetUserEmail, setTargetUserEmail] = useState<string | null>(null); 
   const [searchEmail, setSearchEmail] = useState('');
   const [foundUser, setFoundUser] = useState<(UserData & { uid: string }) | null>(null);
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
@@ -156,6 +160,23 @@ export default function DashboardPage() {
     }
   }, [user, targetUserId]);
 
+  // EFEITO PARA CARREGAR A LISTA SE FOR ADMIN
+  useEffect(() => {
+      if (user && isAdmin) {
+          const fetchAll = async () => {
+              const users = await getAllUsers();
+              // Ordenação local para não depender de index do Firebase
+              // Ordena por data de criação (se tiver) ou por email
+              users.sort((a: any, b: any) => {
+                  if (b.createdAt && a.createdAt) return b.createdAt.seconds - a.createdAt.seconds;
+                  return 0;
+              });
+              setAllUsers(users);
+          };
+          fetchAll();
+      }
+  }, [user, isAdmin]);
+
   useEffect(() => { if (!loading && user) fetchPageData(); }, [user, loading, fetchPageData]);
   useEffect(() => { if (!loading && !user) router.push('/admin/login'); }, [user, loading, router]);
 
@@ -176,18 +197,15 @@ export default function DashboardPage() {
     fetchPageData();
   };
 
-  // --- LÓGICA DE CUPONS ---
   const handleAddCoupon = async () => {
       if (!pageSlug || !newCouponCode || !newCouponValue) return;
       if (!isProPlan) { alert("Cupons são um recurso Pro!"); return; }
-
       const newCoupon: CouponData = {
           code: newCouponCode.toUpperCase().trim(),
           type: newCouponType,
           value: parseFloat(newCouponValue.replace(',', '.')),
           active: true
       };
-
       const updatedCoupons = [...(pageData?.coupons || []), newCoupon];
       await updatePageCoupons(pageSlug, updatedCoupons);
       setPageData(prev => prev ? { ...prev, coupons: updatedCoupons } : null);
@@ -200,7 +218,6 @@ export default function DashboardPage() {
       await updatePageCoupons(pageSlug, updatedCoupons);
       setPageData(prev => prev ? { ...prev, coupons: updatedCoupons } : null);
   };
-  // ------------------------
 
   const handleUpdateItem = async (index: number) => {
     if (!pageSlug || !pageData) return;
@@ -321,11 +338,16 @@ export default function DashboardPage() {
                         <p className="text-xs opacity-80">{daysLeft > 0 ? 'Aproveite todos os recursos liberados!' : 'Seus recursos Pro foram bloqueados. Assine para continuar.'}</p>
                     </div>
                 </div>
-                <button className="bg-black text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-gray-800">Assinar Agora</button>
+                {/* Botão de Assinar removido temporariamente na versão segura */}
+                <button 
+                    onClick={() => alert("Chame no WhatsApp para assinar: (79) 99963-3795")} 
+                    className="bg-black text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-gray-800"
+                >
+                    Assinar Agora
+                </button>
             </div>
         )}
 
-        {/* --- DADOS DO PERFIL (MANTIDO IGUAL) --- */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6 items-start">
             <div className="flex flex-col items-center gap-3 shrink-0">
                 <div className="relative w-24 h-24">
@@ -362,7 +384,6 @@ export default function DashboardPage() {
             </div>
         </div>
 
-        {/* --- DIVULGAÇÃO (MANTIDO IGUAL) --- */}
         {pageSlug && (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                 <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><FaQrcode className="text-orange-500" /> Divulgação</h3>
@@ -397,7 +418,6 @@ export default function DashboardPage() {
             </div>
         )}
 
-        {/* --- NOVO: GERENCIADOR DE CUPONS (PRO) --- */}
         <div className={`bg-white p-6 rounded-xl shadow-sm border border-gray-100 ${!isProPlan ? 'opacity-70 pointer-events-none grayscale' : ''}`}>
              <div className="flex justify-between items-center mb-4">
                  <h3 className="font-bold text-gray-800 flex items-center gap-2"><FaTag className="text-purple-500" /> Cupons de Desconto</h3>
@@ -445,7 +465,6 @@ export default function DashboardPage() {
              </div>
         </div>
 
-        {/* --- SEÇÃO DE PRATOS (MANTIDO IGUAL) --- */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <h3 className="font-bold text-gray-800 mb-4 flex gap-2 items-center">
                 <FaPlus className="text-green-500"/> Novo Prato
@@ -472,7 +491,6 @@ export default function DashboardPage() {
             </form>
         </div>
 
-        {/* --- LISTA E APARÊNCIA (MANTIDO IGUAL) --- */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <h3 className="font-bold text-gray-800 mb-4">Cardápio Atual</h3>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -556,18 +574,58 @@ export default function DashboardPage() {
              </div>
         </div>
 
-        {/* ADMIN AREA */}
+        {/* --- ADMIN AREA: LISTA DE USUÁRIOS (SÓ PARA ADMIN) --- */}
         {isAdmin && (
             <div className="bg-gray-800 text-white p-6 rounded-xl border border-gray-700 mt-10">
-                <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><FaUserCog/> Super Admin</h3>
+                <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><FaUsers/> Base de Usuários</h3>
+                
+                {/* TABELA DE LISTA */}
+                <div className="bg-gray-700 rounded-xl overflow-hidden mb-6">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-900 text-gray-400 font-bold uppercase text-xs">
+                            <tr>
+                                <th className="p-3">Data Cadastro</th>
+                                <th className="p-3">Nome</th>
+                                <th className="p-3">Email</th>
+                                <th className="p-3">Plano</th>
+                                <th className="p-3">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-600">
+                            {allUsers.map((u) => (
+                                <tr key={u.uid} className="hover:bg-gray-600 transition">
+                                    <td className="p-3 text-gray-400 text-xs">
+                                        {/* Tenta pegar a data, se não tiver mostra traço */}
+                                        {u.createdAt?.seconds ? new Date(u.createdAt.seconds * 1000).toLocaleDateString() : '-'}
+                                    </td>
+                                    <td className="p-3 font-bold text-white">{u.displayName || 'Sem Nome'}</td>
+                                    <td className="p-3 text-gray-300">{u.email}</td>
+                                    <td className="p-3">
+                                        <span className={`px-2 py-1 rounded text-xs font-bold ${u.plan === 'pro' ? 'bg-orange-600 text-white' : 'bg-gray-500 text-gray-300'}`}>
+                                            {u.plan ? u.plan.toUpperCase() : 'FREE'}
+                                        </span>
+                                    </td>
+                                    <td className="p-3">
+                                        <button onClick={() => handleManageUser(u.uid, u.email)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-bold">
+                                            Gerenciar
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {allUsers.length === 0 && <p className="p-4 text-center text-gray-400">Carregando usuários...</p>}
+                </div>
+
+                <h4 className="font-bold text-sm mb-2 text-gray-400 flex items-center gap-2"><FaUserCog/> Busca Individual</h4>
                 <form onSubmit={handleSearchUser} className="flex gap-2 mb-4">
-                    <input type="email" value={searchEmail} onChange={e => setSearchEmail(e.target.value)} className="flex-1 p-2 rounded border border-gray-600 bg-gray-700 text-white outline-none" placeholder="Email do cliente" />
-                    <button className="bg-orange-600 text-white px-4 rounded font-bold hover:bg-orange-700">Buscar</button>
+                    <input type="email" value={searchEmail} onChange={e => setSearchEmail(e.target.value)} className="flex-1 p-2 rounded border border-gray-600 bg-gray-700 text-white outline-none" placeholder="Buscar por email específico..." />
+                    <button className="bg-orange-600 text-white px-4 rounded font-bold hover:bg-orange-700"><FaSearch/></button>
                 </form>
                 {foundUser && (
-                    <div className="bg-gray-700 p-4 rounded shadow">
-                        <p className="font-bold">{foundUser.email}</p>
-                        <p className="text-sm text-gray-300 mb-2">Plano Atual: <span className={`font-bold ${foundUser.plan === 'pro' ? 'text-green-400' : 'text-gray-400'}`}>{foundUser.plan.toUpperCase()}</span></p>
+                    <div className="bg-gray-900 p-4 rounded border border-gray-600">
+                        <p className="font-bold text-orange-400">{foundUser.email}</p>
+                        <p className="text-sm text-gray-300 mb-2">Plano Atual: <span className="font-bold text-white">{foundUser.plan?.toUpperCase()}</span></p>
                         <div className="flex gap-2">
                             <button onClick={() => handleChangePlan(foundUser.plan === 'free' ? 'pro' : 'free')} disabled={isUpdatingPlan} className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-sm font-bold">
                                 {foundUser.plan === 'free' ? 'Dar Pro' : 'Tirar Pro'}

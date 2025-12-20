@@ -20,13 +20,13 @@ export type LinkData = {
   category?: string;
 };
 
-// NOVO TIPO: Cupom
+// Tipo Cupom
 export type CouponData = {
-  code: string;       // Código (Ex: NATAL10)
-  type: 'percent' | 'fixed'; // Tipo (10% ou R$ 10,00)
-  value: number;      // Valor do desconto
-  minValue?: number;  // Pedido mínimo (opcional)
-  active: boolean;    // Se está valendo
+  code: string;       
+  type: 'percent' | 'fixed'; 
+  value: number;      
+  minValue?: number;  
+  active: boolean;    
 };
 
 export type PageData = {
@@ -38,7 +38,7 @@ export type PageData = {
   profileImageUrl?: string;
   backgroundImage?: string;
   links: LinkData[];
-  coupons?: CouponData[]; // LISTA DE CUPONS
+  coupons?: CouponData[]; 
   theme?: string;
   userId: string;
   slug: string;
@@ -48,16 +48,25 @@ export type PageData = {
   createdAt?: any;
 };
 
+// src/lib/pageService.ts
+
+// ... (imports)
+
 export type UserData = {
   plan: string;
   pageSlug: string;
   displayName?: string;
   email?: string;
   role?: string;
-  trialDeadline?: Timestamp;
+  trialDeadline?: any; 
+  cpfCnpj?: string;   // Garante que o Modal de CPF funciona
+  phone?: string;     // Garante que o telefone funciona
+  createdAt?: any;    // <--- ADICIONE ESTA LINHA (Resolve o erro da data)
 };
 
-// FUNÇÃO AUXILIAR: Verifica validade do plano
+// ... (resto do arquivo)
+
+// FUNÇÃO AUXILIAR
 const checkPlanValidity = (data: any) => {
     if (data.plan === 'pro' && data.trialDeadline) {
         const now = new Date();
@@ -131,6 +140,23 @@ export const getPageDataBySlug = async (slug: string): Promise<DocumentData | nu
   } catch (error) { return null; }
 };
 
+// NOVO: Busca TODOS os usuários (Para o Painel Admin)
+export const getAllUsers = async (): Promise<(UserData & { uid: string, createdAt?: any })[]> => {
+  try {
+    const usersRef = collection(db, "users");
+    // Sem orderBy por enquanto para evitar erro de índice no Firebase
+    const snapshot = await getDocs(usersRef);
+    
+    return snapshot.docs.map(doc => ({
+      uid: doc.id,
+      ...(doc.data() as UserData)
+    }));
+  } catch (error) {
+    console.error("Erro ao listar usuários:", error);
+    return [];
+  }
+};
+
 // --- ESCRITA ---
 
 export const addLinkToPage = async (pageSlug: string, newLink: LinkData): Promise<void> => {
@@ -148,7 +174,6 @@ export const updateLinksOnPage = async (pageSlug: string, updatedLinks: LinkData
   await updateDoc(pageDocRef, { links: updatedLinks });
 };
 
-// NOVA FUNÇÃO: Atualizar lista de cupons
 export const updatePageCoupons = async (pageSlug: string, coupons: CouponData[]): Promise<void> => {
   const pageDocRef = doc(db, "pages", pageSlug);
   await updateDoc(pageDocRef, { coupons });
