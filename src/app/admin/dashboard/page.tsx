@@ -12,23 +12,20 @@ import {
   PageData, LinkData, UserData, CouponData, findUserByEmail, updateUserPlan
 } from '@/lib/pageService';
 import { 
-  FaUserCog, FaImage, FaSave, FaQrcode, FaChartLine, FaTag, FaTrashAlt,
-  FaUtensils, FaPlus, FaTrash, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaStore, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaHeadset
+  FaUserCog, FaImage, FaSave, FaQrcode, FaTag, FaTrashAlt,
+  FaUtensils, FaPlus, FaTrash, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaStore, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch
 } from 'react-icons/fa';
 import Image from 'next/image';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableLinkItem } from '@/components/SortableLinkItem';
 import { QRCodeCanvas } from 'qrcode.react';
-import FiscalModal from '@/components/FiscalModal'; 
+import FiscalModal from '@/components/FiscalModal';
+import { UpgradeModal } from '@/components/UpgradeModal'; // <--- IMPORTANTE
 
-
-const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
+// Pega chaves do .env ou usa string vazia para não quebrar
+const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
-
-if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
-  console.error("⚠️ ERRO: Chaves do Cloudinary não configuradas no .env.local");
-}
 
 const themes = [
   { name: 'restaurant', label: 'Bistrô', colorClass: 'bg-red-900', isPro: false },
@@ -51,7 +48,8 @@ export default function DashboardPage() {
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   
   const [isProcessing, setIsProcessing] = useState(false); 
-  const [isFiscalModalOpen, setIsFiscalModalOpen] = useState(false); 
+  const [isFiscalModalOpen, setIsFiscalModalOpen] = useState(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); // <--- ESTADO DO MODAL MANUAL
 
   // Campos do Prato
   const [newItemTitle, setNewItemTitle] = useState('');
@@ -95,7 +93,6 @@ export default function DashboardPage() {
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
   const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
   
-  // Lista de Usuários (Super Admin)
   const [allUsers, setAllUsers] = useState<(UserData & { uid: string, createdAt?: any })[]>([]);
 
   const isProPlan = targetUserId ? true : (pageData?.plan === 'pro');
@@ -107,63 +104,29 @@ export default function DashboardPage() {
 
   const existingCategories = Array.from(new Set(pageData?.links?.map(l => l.category).filter(Boolean) || []));
 
-  // --- NOVA LÓGICA DE ASSINATURA ---
+  // --- LÓGICA DE ASSINATURA MANUAL ---
   const handleSubscribeClick = () => {
-    // Usando 'as any' para evitar erro de tipo caso cpfCnpj não esteja no UserData
-    const userWithFiscal = userData as any;
-    if (userWithFiscal?.cpfCnpj) {
-        processSubscription(userWithFiscal.cpfCnpj, userWithFiscal.phone || '');
-    } else {
-        setIsFiscalModalOpen(true);
-    }
+    setIsUpgradeModalOpen(true); // Abre o Modal de Pix
   };
 
+  // Mantido caso precise salvar CPF depois
   const saveFiscalDataAndSubscribe = async (cpf: string, phone: string) => {
     if (!user) return;
     setIsFiscalModalOpen(false);
-    setIsProcessing(true);
     try {
         await updateUserFiscalData(user.uid, cpf, phone);
-        await processSubscription(cpf, phone);
+        alert("Dados salvos! Agora faça o Pix para liberar.");
+        setIsUpgradeModalOpen(true);
     } catch (error) {
-        console.error("Erro ao salvar dados:", error);
-        alert("Erro ao salvar seus dados. Tente novamente.");
-        setIsProcessing(false);
-    }
-  };
-
-  const processSubscription = async (cpf: string, phone: string) => {
-    if (!user) return;
-    setIsProcessing(true);
-    try {
-      const response = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            user: { 
-                uid: user.uid, 
-                email: user.email, 
-                displayName: user.displayName,
-                cpfCnpj: cpf, 
-                phone: phone 
-            } 
-        })
-      });
-      const data = await response.json();
-      if (data.success) {
-        alert("✅ Sucesso! O link de pagamento foi enviado para o seu e-mail.");
-      } else {
-        alert("Erro ao processar assinatura: " + (data.error || "Tente novamente."));
-      }
-    } catch (error) {
-      console.error(error);
-      alert("Erro de conexão. Tente novamente.");
-    } finally {
-      setIsProcessing(false);
+        alert("Erro ao salvar dados.");
     }
   };
 
   const uploadToCloudinary = async (file: File): Promise<string> => {
+    if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+        alert("Erro de configuração de imagem. Avise o suporte.");
+        return "";
+    }
     const formData = new FormData();
     formData.append('file', file);
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
@@ -225,11 +188,14 @@ export default function DashboardPage() {
     }
   }, [user, targetUserId]);
 
-  // CARREGA A LISTA DE USUÁRIOS SE FOR ADMIN
   useEffect(() => {
       if (user && isAdmin) {
           const fetchAll = async () => {
               const users = await getAllUsers();
+              users.sort((a: any, b: any) => {
+                  if (b.createdAt && a.createdAt) return b.createdAt.seconds - a.createdAt.seconds;
+                  return 0;
+              });
               setAllUsers(users);
           };
           fetchAll();
@@ -380,6 +346,12 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20 font-sans relative">
       
+      {/* MODAL MANUAL DE PIX */}
+      <UpgradeModal 
+        isOpen={isUpgradeModalOpen} 
+        onClose={() => setIsUpgradeModalOpen(false)} 
+      />
+      
       <FiscalModal 
         isOpen={isFiscalModalOpen} 
         onClose={() => setIsFiscalModalOpen(false)} 
@@ -395,7 +367,6 @@ export default function DashboardPage() {
 
       <main className="max-w-4xl mx-auto py-8 px-4 space-y-6">
         
-        {/* BANNER DE TRIAL */}
         {daysLeft !== null && (
             <div className={`p-4 rounded-xl flex items-center justify-between shadow-sm ${daysLeft > 0 ? 'bg-yellow-100 border border-yellow-300 text-yellow-800' : 'bg-red-100 border border-red-300 text-red-800'}`}>
                 <div className="flex items-center gap-3">
@@ -415,7 +386,8 @@ export default function DashboardPage() {
             </div>
         )}
 
-        {/* ... (CÓDIGO EXISTENTE: Perfil, Divulgação, Cupons, Pratos, Lista, Temas, Admin) ... */}
+        {/* ... (PERFIL, DIVULGAÇÃO, ETC - Tudo mantido igual) ... */}
+        
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6 items-start">
             <div className="flex flex-col items-center gap-3 shrink-0">
                 <div className="relative w-24 h-24">
@@ -486,6 +458,7 @@ export default function DashboardPage() {
                  <h3 className="font-bold text-gray-800 flex items-center gap-2"><FaTag className="text-purple-500" /> Cupons de Desconto</h3>
                  {!isProPlan && <span className="bg-gray-200 text-gray-500 text-xs px-2 py-1 rounded-full flex items-center gap-1 font-bold"><FaLock size={10}/> Recurso Pro</span>}
              </div>
+             
              <div className="flex flex-col md:flex-row gap-4 mb-6 p-4 bg-purple-50 rounded-xl border border-purple-100">
                  <div className="flex-1">
                      <label className="text-xs font-bold text-purple-800 uppercase mb-1 block">Código (Ex: VIP10)</label>
@@ -506,6 +479,7 @@ export default function DashboardPage() {
                      <button onClick={handleAddCoupon} className="bg-purple-600 text-white px-6 py-2 rounded font-bold text-sm hover:bg-purple-700 h-10 w-full md:w-auto">Criar</button>
                  </div>
              </div>
+
              <div className="space-y-2">
                  {pageData?.coupons && pageData.coupons.length > 0 ? (
                      pageData.coupons.map((coupon, idx) => (
@@ -598,7 +572,7 @@ export default function DashboardPage() {
             </DndContext>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8">
              <h3 className="font-bold text-gray-800 mb-4">Aparência & Temas</h3>
              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
                  <label className="text-sm font-bold text-gray-700 mb-2 block items-center gap-2">
@@ -635,12 +609,10 @@ export default function DashboardPage() {
              </div>
         </div>
 
-        {/* --- ADMIN AREA: LISTA DE USUÁRIOS (SÓ PARA ADMIN) --- */}
         {isAdmin && (
             <div className="bg-gray-800 text-white p-6 rounded-xl border border-gray-700 mt-10">
                 <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><FaUsers/> Base de Usuários</h3>
                 
-                {/* TABELA DE LISTA */}
                 <div className="bg-gray-700 rounded-xl overflow-hidden mb-6">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-gray-900 text-gray-400 font-bold uppercase text-xs">
@@ -699,7 +671,6 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {/* BOTÃO FLUTUANTE DE SUPORTE - AQUI ESTÁ ELE! */}
       <a
         href="https://wa.me/5579996337995?text=Olá! Preciso de ajuda com o CardápioPro."
         target="_blank"
