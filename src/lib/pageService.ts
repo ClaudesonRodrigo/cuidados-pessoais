@@ -2,11 +2,12 @@
 
 import {
   doc, getDoc, updateDoc, arrayUnion, arrayRemove, DocumentData,
-  collection, query, where, getDocs, orderBy, limit, Timestamp
+  collection, query, where, getDocs, orderBy, limit, Timestamp, addDoc
 } from "firebase/firestore";
 import { db } from "./firebaseClient";
 
 // --- TIPOS ---
+
 export type LinkData = {
   title: string;
   url?: string;
@@ -18,9 +19,10 @@ export type LinkData = {
   description?: string;
   imageUrl?: string;
   category?: string;
+  durationMinutes?: number; 
+  active?: boolean;         
 };
 
-// Tipo Cupom
 export type CouponData = {
   code: string;       
   type: 'percent' | 'fixed'; 
@@ -48,9 +50,27 @@ export type PageData = {
   createdAt?: any;
 };
 
-// src/lib/pageService.ts
+export type AppointmentData = {
+  id?: string;
+  pageSlug: string;
+  serviceId?: string;
+  serviceName: string;
+  
+  // Dados do Cliente (Login Google)
+  customerId?: string; // ID do usuário que agendou
+  customerEmail?: string; 
+  customerPhoto?: string;
 
-// ... (imports)
+  customerName: string;
+  customerPhone: string;
+  
+  startAt: Timestamp; 
+  endAt: Timestamp;   
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  createdAt: any;
+  totalValue: number;
+  notes?: string;
+};
 
 export type UserData = {
   plan: string;
@@ -59,12 +79,10 @@ export type UserData = {
   email?: string;
   role?: string;
   trialDeadline?: any; 
-  cpfCnpj?: string;   // Garante que o Modal de CPF funciona
-  phone?: string;     // Garante que o telefone funciona
-  createdAt?: any;    // <--- ADICIONE ESTA LINHA (Resolve o erro da data)
+  cpfCnpj?: string;   
+  phone?: string;     
+  createdAt?: any;    
 };
-
-// ... (resto do arquivo) 
 
 // FUNÇÃO AUXILIAR
 const checkPlanValidity = (data: any) => {
@@ -140,11 +158,9 @@ export const getPageDataBySlug = async (slug: string): Promise<DocumentData | nu
   } catch (error) { return null; }
 };
 
-// NOVO: Busca TODOS os usuários (Para o Painel Admin)
 export const getAllUsers = async (): Promise<(UserData & { uid: string, createdAt?: any })[]> => {
   try {
     const usersRef = collection(db, "users");
-    // Sem orderBy por enquanto para evitar erro de índice no Firebase
     const snapshot = await getDocs(usersRef);
     
     return snapshot.docs.map(doc => ({
@@ -155,6 +171,72 @@ export const getAllUsers = async (): Promise<(UserData & { uid: string, createdA
     console.error("Erro ao listar usuários:", error);
     return [];
   }
+};
+
+// --- AGENDAMENTOS (CORE DO SISTEMA) ---
+
+export const getAppointmentsByDate = async (pageSlug: string, dateStart: Date, dateEnd: Date): Promise<AppointmentData[]> => {
+  try {
+    const appsRef = collection(db, "appointments");
+    const q = query(
+      appsRef, 
+      where("pageSlug", "==", pageSlug),
+      where("startAt", ">=", Timestamp.fromDate(dateStart)),
+      where("startAt", "<=", Timestamp.fromDate(dateEnd))
+    );
+    
+    const snapshot = await getDocs(q);
+    const appointments = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as AppointmentData))
+      .filter(a => a.status !== 'cancelled');
+      
+    return appointments;
+  } catch (error) {
+    console.error("Erro ao buscar agendamentos:", error);
+    return [];
+  }
+};
+
+export const getUpcomingAppointments = async (pageSlug: string): Promise<AppointmentData[]> => {
+    try {
+        const appsRef = collection(db, "appointments");
+        const today = new Date();
+        today.setHours(0,0,0,0);
+
+        const q = query(
+            appsRef,
+            where("pageSlug", "==", pageSlug),
+            where("startAt", ">=", Timestamp.fromDate(today)),
+            orderBy("startAt", "asc")
+        );
+
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppointmentData));
+    } catch (error) {
+        console.error("Erro ao buscar agenda:", error);
+        return [];
+    }
+};
+
+export const createAppointment = async (appointment: AppointmentData): Promise<string> => {
+  try {
+    const appsRef = collection(db, "appointments");
+    const docRef = await addDoc(appsRef, appointment);
+    return docRef.id;
+  } catch (error) {
+    console.error("Erro ao criar agendamento:", error);
+    throw error;
+  }
+};
+
+export const updateAppointmentStatus = async (appointmentId: string, status: 'confirmed' | 'cancelled' | 'completed'): Promise<void> => {
+    try {
+        const appRef = doc(db, "appointments", appointmentId);
+        await updateDoc(appRef, { status });
+    } catch (error) {
+        console.error("Erro ao atualizar status:", error);
+        throw error;
+    }
 };
 
 // --- ESCRITA ---
@@ -234,7 +316,6 @@ export const updateUserPlan = async (userId: string, newPlan: 'free' | 'pro'): P
   }
 };
 
-// Atualiza dados fiscais do usuário (CPF/Telefone)
 export const updateUserFiscalData = async (userId: string, cpfCnpj: string, phone: string): Promise<void> => {
   const userRef = doc(db, "users", userId);
   await updateDoc(userRef, { cpfCnpj, phone });
