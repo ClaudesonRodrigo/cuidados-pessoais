@@ -1,249 +1,238 @@
 // src/app/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { 
-  FaUtensils, FaWhatsapp, FaQrcode, FaBolt, FaCheck, FaArrowRight, FaStore, FaTicketAlt, FaRocket, FaHeadset, FaBan 
-} from 'react-icons/fa';
 import { motion } from 'framer-motion';
-import { getRecentPages, PageData } from '@/lib/pageService';
-import Image from 'next/image';
+import { 
+  FaCut, FaCalendarAlt, FaWhatsapp, FaCheck, FaRocket, FaMobileAlt, FaMoneyBillWave, FaArrowRight, FaHeadset, FaCogs 
+} from 'react-icons/fa';
 
-export default function LandingPage() {
-  const [recentPages, setRecentPages] = useState<PageData[]>([]);
-  const [loadingRecents, setLoadingRecents] = useState(true);
+export default function Home() {
+  
+  const features = [
+    {
+      icon: <FaCalendarAlt className="text-4xl text-orange-500 mb-4" />,
+      title: "Agenda Automática",
+      desc: "Seus clientes agendam sozinhos pelo link. Chega de ficar respondendo 'tem horário?' no WhatsApp o dia todo."
+    },
+    {
+      icon: <FaMoneyBillWave className="text-4xl text-green-500 mb-4" />,
+      title: "Controle Financeiro",
+      desc: "Saiba exatamente quanto você faturou no dia. Confirme pagamentos via Pix e veja seu negócio crescer."
+    },
+    {
+      icon: <FaMobileAlt className="text-4xl text-blue-500 mb-4" />,
+      title: "Cardápio de Serviços",
+      desc: "O cliente escolhe Cabelo + Barba + Sobrancelha e o sistema calcula o tempo total e o valor automaticamente."
+    }
+  ];
 
-  // SEU NÚMERO DO WHATSAPP PARA VENDAS DO PLANO VIP
-  const SALES_WHATSAPP = "5579996337995"; 
-
-  useEffect(() => {
-    const fetchRecents = async () => {
-      const pages = await getRecentPages();
-      setRecentPages(pages);
-      setLoadingRecents(false);
-    };
-    fetchRecents();
-  }, []);
+  const plans = [
+    {
+      name: "Barber Pro",
+      price: "R$ 29,90",
+      period: "/mês",
+      features: [
+        "7 Dias de Teste Grátis",
+        "Agenda Ilimitada", 
+        "Validação de Pix", 
+        "Link Personalizado",
+        "Dashboard Financeiro",
+        "Suporte via WhatsApp"
+      ],
+      cta: "Testar Grátis Agora",
+      highlight: true,
+      link: "/admin/login"
+    },
+    {
+      name: "Setup VIP",
+      price: "R$ 199,00",
+      period: "único",
+      features: [
+        "Nós configuramos TUDO",
+        "Cadastro dos seus Serviços",
+        "Personalização da Página",
+        "Treinamento de Uso",
+        "Suporte na Configuração do Pix",
+        "Entrega em 24h"
+      ],
+      cta: "Quero Configuração VIP",
+      highlight: false,
+      link: "https://wa.me/5579996337995?text=Ola,%20quero%20contratar%20o%20Setup%20VIP%20de%20R$%20199,00"
+    }
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+    <div className="min-h-screen bg-gray-950 text-white font-sans selection:bg-orange-500 selection:text-white">
       
-      {/* --- NAVBAR --- */}
-      <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-xl font-extrabold text-gray-800">
-            <div className="bg-orange-600 text-white p-2 rounded-lg">
-              <FaUtensils size={18} />
-            </div>
-            Cardápio<span className="text-orange-600">Pro</span>
+      {/* NAVBAR */}
+      <nav className="fixed top-0 w-full z-50 bg-gray-900/80 backdrop-blur-md border-b border-gray-800">
+        <div className="max-w-6xl mx-auto px-6 h-20 flex justify-between items-center">
+          <div className="flex items-center gap-2 text-2xl font-bold tracking-tighter">
+            <FaCut className="text-orange-500" />
+            <span>Barber<span className="text-orange-500">Pro</span></span>
           </div>
           <div className="flex gap-4">
-            <Link href="/admin/login" className="text-sm font-bold text-gray-600 hover:text-orange-600 py-2 transition">
-              Área do Cliente
+            <Link href="/admin/login" className="text-sm font-bold text-gray-300 hover:text-white transition py-2">
+              Entrar
             </Link>
-            <Link href="/admin/login" className="bg-gray-900 text-white px-5 py-2 rounded-full text-sm font-bold hover:bg-orange-600 transition shadow-lg hidden sm:block">
-              Criar Grátis
+            <Link href="/admin/login" className="hidden sm:block bg-white text-gray-900 px-5 py-2 rounded-full text-sm font-bold hover:bg-gray-200 transition">
+              Criar Conta
             </Link>
           </div>
         </div>
       </nav>
 
-      {/* --- HERO SECTION --- */}
-      <header className="pt-32 pb-20 px-4 text-center bg-gradient-to-b from-white to-gray-100 overflow-hidden relative">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-orange-200/20 rounded-full blur-3xl -z-10"></div>
+      {/* HERO SECTION */}
+      <header className="relative pt-32 pb-20 px-6 overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-orange-600/20 rounded-full blur-[120px] -z-10" />
 
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }} 
-          animate={{ opacity: 1, y: 0 }} 
-          transition={{ duration: 0.5 }}
-          className="max-w-4xl mx-auto"
-        >
-          <span className="inline-block py-1 px-3 rounded-full bg-orange-100 text-orange-700 text-xs font-bold uppercase tracking-wider mb-4 border border-orange-200">
-            🚀 O Sistema de Delivery Mais Completo
-          </span>
-          <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-gray-900 mb-6 leading-tight">
-            Venda mais com <span className="text-green-500">WhatsApp</span>, <br/>
-            <span className="text-blue-600">Pix</span> e <span className="text-purple-600">Cupons</span>.
-          </h1>
-          <p className="text-lg md:text-xl text-gray-600 mb-8 max-w-2xl mx-auto leading-relaxed">
-            Tenha seu cardápio digital profissional hoje mesmo. Comece grátis e escale seu negócio.
-          </p>
+        <div className="max-w-4xl mx-auto text-center space-y-8">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.5 }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-900 border border-gray-800 text-orange-400 text-xs font-bold uppercase tracking-wider"
+          >
+            <FaRocket /> Teste 7 dias grátis sem compromisso
+          </motion.div>
           
-          <div className="flex flex-col items-center gap-6">
-            <Link href="/admin/login" className="w-full sm:w-auto bg-orange-600 text-white px-8 py-4 rounded-xl text-lg font-bold hover:bg-orange-700 transition shadow-xl hover:shadow-orange-500/30 flex items-center justify-center gap-2 transform hover:scale-105">
-              Criar Conta Grátis <FaArrowRight size={14}/>
+          <motion.h1 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="text-5xl md:text-7xl font-extrabold tracking-tight leading-tight"
+          >
+            Sua barbearia lotada e <span className="text-transparent bg-clip-text bg-linear-to-r from-orange-400 to-red-600">organizada no automático.</span>
+          </motion.h1>
+          
+          <motion.p 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto"
+          >
+            Tenha um sistema de agendamento profissional, receba no Pix e fidelize seus clientes. Comece hoje mesmo.
+          </motion.p>
+          
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.5, delay: 0.3 }}
+            className="flex flex-col sm:flex-row justify-center gap-4 pt-4"
+          >
+            <Link href="/admin/login" className="bg-orange-600 hover:bg-orange-700 text-white text-lg font-bold px-8 py-4 rounded-xl shadow-lg shadow-orange-900/30 transition transform hover:-translate-y-1 flex items-center justify-center gap-3">
+              Começar Teste Grátis <FaArrowRight />
             </Link>
-
-            <div className="w-full max-w-2xl mt-4">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
-                    Últimos Restaurantes Cadastrados 👇
-                </p>
-                
-                {loadingRecents ? (
-                    <div className="flex justify-center gap-3 animate-pulse">
-                        <div className="h-10 w-32 bg-gray-200 rounded-full"></div>
-                        <div className="h-10 w-32 bg-gray-200 rounded-full"></div>
-                    </div>
-                ) : (
-                    <div className="flex flex-wrap justify-center gap-3">
-                        {recentPages.length > 0 ? (
-                            recentPages.map((page) => (
-                                <Link 
-                                    key={page.slug} 
-                                    href={`/${page.slug}`} 
-                                    target="_blank"
-                                    className="bg-white border border-gray-200 hover:border-orange-400 text-gray-700 px-4 py-2 rounded-full text-sm font-bold shadow-sm hover:shadow-md transition flex items-center gap-2 group"
-                                >
-                                    {page.profileImageUrl ? (
-                                        <div className="w-5 h-5 rounded-full overflow-hidden relative">
-                                            <Image src={page.profileImageUrl} alt="Icon" fill className="object-cover" sizes="20px" />
-                                        </div>
-                                    ) : (
-                                        <FaStore className="text-gray-400 group-hover:text-orange-500" />
-                                    )}
-                                    {page.title.length > 15 ? page.title.substring(0, 15) + '...' : page.title}
-                                </Link>
-                            ))
-                        ) : (
-                            <Link href="/admin/login" className="bg-white border border-gray-300 text-gray-600 px-5 py-2 rounded-full text-sm font-bold hover:bg-gray-50 flex items-center gap-2">
-                                <FaStore className="text-orange-500" /> Seja o primeiro a criar!
-                            </Link>
-                        )}
-                    </div>
-                )}
-            </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        </div>
       </header>
 
-      {/* --- VITRINE DE RECURSOS --- */}
-      <section className="py-20 px-4 bg-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-800 mb-4">Tudo que você precisa para vender mais</h2>
-            <p className="text-gray-500">Esqueça os PDFs. Tenha um sistema profissional.</p>
-          </div>
-
-          <div className="grid md:grid-cols-4 gap-6">
-            <div className="p-6 rounded-2xl bg-gray-50 border border-gray-100 hover:border-green-200 transition group">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4 text-green-600"><FaWhatsapp size={24} /></div>
-              <h3 className="text-lg font-bold mb-2">Pedidos no Zap</h3>
-              <p className="text-sm text-gray-600">O pedido chega formatado e calculado. Zero erros de comunicação.</p>
+      {/* MOCKUP / PREVIEW */}
+      <section className="px-4 pb-20">
+         <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }} 
+            whileInView={{ opacity: 1, scale: 1 }} 
+            viewport={{ once: true }}
+            className="max-w-5xl mx-auto bg-gray-900 rounded-2xl border border-gray-800 p-2 shadow-2xl relative"
+         >
+            <div className="h-8 bg-gray-800 rounded-t-xl flex items-center gap-2 px-4 mb-2">
+                <div className="w-3 h-3 rounded-full bg-red-500"/>
+                <div className="w-3 h-3 rounded-full bg-yellow-500"/>
+                <div className="w-3 h-3 rounded-full bg-green-500"/>
             </div>
-
-            <div className="p-6 rounded-2xl bg-gray-50 border border-gray-100 hover:border-blue-200 transition group">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 text-blue-600"><FaQrcode size={24} /></div>
-              <h3 className="text-lg font-bold mb-2">Pix Automático</h3>
-              <p className="text-sm text-gray-600">QR Code na hora. Receba direto na sua conta, sem taxas.</p>
+            <div className="aspect-video bg-gray-950 rounded-b-xl flex items-center justify-center relative overflow-hidden group">
+                <div className="absolute inset-0 bg-linear-to-t from-gray-900 via-transparent to-transparent z-10"/>
+                <div className="text-center z-20 px-4">
+                    <FaMobileAlt className="text-6xl text-gray-700 mx-auto mb-4"/>
+                    <h3 className="text-2xl font-bold text-gray-500">Agendamento Simplificado</h3>
+                    <p className="text-gray-600">Seus clientes agendam em 3 cliques</p>
+                </div>
             </div>
-
-            <div className="p-6 rounded-2xl bg-gray-50 border border-gray-100 hover:border-purple-200 transition group">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4 text-purple-600"><FaTicketAlt size={24} /></div>
-              <h3 className="text-lg font-bold mb-2">Cupons</h3>
-              <p className="text-sm text-gray-600">Crie campanhas como "VIP10" e fidelize seus clientes.</p>
-            </div>
-
-            <div className="p-6 rounded-2xl bg-gray-50 border border-gray-100 hover:border-orange-200 transition group">
-              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mb-4 text-orange-600"><FaRocket size={24} /></div>
-              <h3 className="text-lg font-bold mb-2">Alta Performance</h3>
-              <p className="text-sm text-gray-600">Cardápio que carrega em milissegundos e não trava.</p>
-            </div>
-          </div>
-        </div>
+         </motion.div>
       </section>
 
-      {/* --- TABELA DE PREÇOS (3 OPÇÕES) --- */}
-      <section className="py-20 px-4 bg-gray-900 text-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Escolha o plano ideal</h2>
-            <p className="text-gray-400">Comece pequeno e cresça rápido.</p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-6 items-center">
-            
-            {/* 1. PLANO GRÁTIS */}
-            <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 h-fit">
-              <h3 className="text-lg font-bold text-gray-400 mb-2">Iniciante</h3>
-              <div className="text-3xl font-extrabold mb-4">Grátis <span className="text-xs font-normal text-gray-500">/sempre</span></div>
-              <p className="text-xs text-gray-400 mb-6">Ideal para testar e validar seu negócio.</p>
-              
-              <ul className="space-y-3 mb-8 text-sm text-gray-300">
-                <li className="flex gap-2"><FaCheck className="text-green-500 shrink-0 mt-0.5"/> <strong>8 Produtos</strong></li>
-                <li className="flex gap-2"><FaCheck className="text-green-500 shrink-0 mt-0.5"/> Pedidos no WhatsApp</li>
-                <li className="flex gap-2 opacity-50"><FaBan className="text-gray-500 shrink-0 mt-0.5"/> Sem Pix Automático</li>
-                <li className="flex gap-2 opacity-50"><FaBan className="text-gray-500 shrink-0 mt-0.5"/> Sem Cupons</li>
-              </ul>
-              <Link href="/admin/login" className="block w-full py-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 font-bold text-center transition text-sm">
-                Criar Grátis
-              </Link>
-            </div>
-
-            {/* 2. PLANO PRO (MENSAL) - DESTAQUE */}
-            <div className="bg-orange-600 p-8 rounded-3xl border-4 border-orange-500 shadow-2xl relative transform scale-105 z-10">
-              <div className="absolute top-0 right-0 bg-yellow-400 text-black text-[10px] font-bold px-3 py-1 rounded-bl-xl rounded-tr-xl uppercase">Mais Popular</div>
-              <h3 className="text-xl font-bold text-orange-100 mb-2">Profissional</h3>
-              <div className="text-4xl font-extrabold mb-4">R$ 29,90 <span className="text-sm font-normal text-orange-200">/mês</span></div>
-              <p className="text-xs text-orange-200 mb-6">Liberdade total para vender sem limites.</p>
-
-              <ul className="space-y-3 mb-8 text-white font-medium text-sm">
-                <li className="flex gap-2"><FaCheck className="text-yellow-300 shrink-0 mt-0.5"/> <strong>Produtos Ilimitados</strong></li>
-                <li className="flex gap-2"><FaCheck className="text-yellow-300 shrink-0 mt-0.5"/> <strong>Pix Automático</strong> (QR Code)</li>
-                <li className="flex gap-2"><FaCheck className="text-yellow-300 shrink-0 mt-0.5"/> <strong>Cupons de Desconto</strong></li>
-                <li className="flex gap-2"><FaCheck className="text-yellow-300 shrink-0 mt-0.5"/> Temas Premium</li>
-                <li className="flex gap-2"><FaCheck className="text-yellow-300 shrink-0 mt-0.5"/> Capa Personalizada</li>
-              </ul>
-              <Link href="/admin/login" className="block w-full py-3 rounded-xl bg-white text-orange-600 hover:bg-gray-100 font-bold text-center transition shadow-lg">
-                Testar 7 Dias Grátis
-              </Link>
-            </div>
-
-            {/* 3. PLANO VIP (SETUP 200) */}
-            <div className="bg-gradient-to-b from-gray-800 to-gray-900 p-6 rounded-2xl border border-purple-500/50 h-fit relative overflow-hidden">
-              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-purple-500 to-blue-500"></div>
-              <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2"><FaRocket className="text-purple-400"/> VIP Setup</h3>
-              <div className="text-3xl font-extrabold mb-1">R$ 200,00</div>
-              <p className="text-xs text-purple-300 mb-4 font-bold">Taxa Única + R$ 29,90/mês</p>
-              <p className="text-xs text-gray-400 mb-6 border-l-2 border-purple-500 pl-3">
-                Sem tempo? Nossa equipe cadastra e configura tudo para você em 24h.
-              </p>
-
-              <ul className="space-y-3 mb-8 text-sm text-gray-300">
-                <li className="flex gap-2"><FaCheck className="text-purple-400 shrink-0 mt-0.5"/> <strong>Nós cadastramos tudo</strong></li>
-                <li className="flex gap-2"><FaCheck className="text-purple-400 shrink-0 mt-0.5"/> Design de Capa Profissional</li>
-                <li className="flex gap-2"><FaCheck className="text-purple-400 shrink-0 mt-0.5"/> Consultoria de Cardápio</li>
-                <li className="flex gap-2"><FaCheck className="text-purple-400 shrink-0 mt-0.5"/> Suporte VIP no WhatsApp</li>
-              </ul>
-              
-              <a 
-                href={`https://wa.me/${SALES_WHATSAPP}?text=Olá! Quero contratar o Setup VIP de 200 reais para meu restaurante.`}
-                target="_blank"
-                className="block w-full py-2.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-center transition flex items-center justify-center gap-2 text-sm"
+      {/* FEATURES */}
+      <section className="py-20 bg-gray-900/50 border-y border-gray-800">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="grid md:grid-cols-3 gap-8">
+            {features.map((f, i) => (
+              <motion.div 
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="bg-gray-950 p-8 rounded-2xl border border-gray-800 hover:border-orange-500/50 transition duration-300"
               >
-                <FaHeadset /> Quero Receber Pronto
-              </a>
-            </div>
-
+                {f.icon}
+                <h3 className="text-xl font-bold mb-2">{f.title}</h3>
+                <p className="text-gray-400 text-sm leading-relaxed">{f.desc}</p>
+              </motion.div>
+            ))}
           </div>
         </div>
       </section>
 
-      <section className="py-24 px-4 text-center">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 mb-6">Pronto para digitalizar seu delivery?</h2>
-          <p className="text-gray-600 text-lg mb-8">Junte-se a centenas de restaurantes que modernizaram o atendimento.</p>
-          <Link href="/admin/login" className="inline-flex items-center gap-2 bg-green-600 text-white px-10 py-5 rounded-full text-xl font-bold hover:bg-green-700 transition shadow-xl hover:shadow-green-500/40">
-            <FaWhatsapp /> Criar Meu Cardápio Agora
-          </Link>
+      {/* PRICING */}
+      <section className="py-20 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Planos Simples</h2>
+            <p className="text-gray-400">Escolha fazer sozinho ou deixe que a gente faz tudo.</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 items-start">
+            {plans.map((plan, i) => (
+              <motion.div 
+                key={i}
+                initial={{ opacity: 0, x: i === 0 ? -20 : 20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                className={`p-8 rounded-3xl border flex flex-col h-full ${plan.highlight ? 'bg-gray-900 border-orange-500 relative shadow-2xl shadow-orange-900/20' : 'bg-gray-950 border-gray-800'}`}
+              >
+                {plan.highlight && (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-orange-600 text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-wider">
+                    Recomendado
+                  </div>
+                )}
+                
+                <div className="flex items-center gap-3 mb-4">
+                    {i === 1 ? <FaCogs className="text-3xl text-gray-500"/> : <FaRocket className="text-3xl text-orange-500"/>}
+                    <h3 className="text-2xl font-bold text-white">{plan.name}</h3>
+                </div>
+                
+                <div className="flex items-end gap-1 mb-6">
+                  <span className="text-4xl font-extrabold text-white">{plan.price}</span>
+                  <span className="text-gray-500 mb-1 font-medium">{plan.period}</span>
+                </div>
+
+                <ul className="space-y-4 mb-8 flex-1">
+                  {plan.features.map((feat, j) => (
+                    <li key={j} className="flex items-center gap-3 text-sm text-gray-300">
+                      <FaCheck className={`shrink-0 ${plan.highlight ? 'text-orange-500' : 'text-gray-600'}`} />
+                      {feat}
+                    </li>
+                  ))}
+                </ul>
+
+                <Link 
+                  href={plan.link}
+                  target={i === 1 ? "_blank" : "_self"}
+                  className={`w-full py-4 rounded-xl font-bold text-center transition flex items-center justify-center gap-2 ${plan.highlight ? 'bg-orange-600 text-white hover:bg-orange-700' : 'bg-gray-800 text-white hover:bg-gray-700'}`}
+                >
+                  {i === 1 && <FaWhatsapp/>} {plan.cta}
+                </Link>
+              </motion.div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <footer className="bg-white border-t border-gray-100 py-10 px-4 text-center">
-        <div className="flex items-center justify-center gap-2 text-xl font-bold text-gray-800 mb-4">
-          <FaUtensils className="text-orange-600" /> CardápioPro
-        </div>
-        <p className="text-gray-500 text-sm">© 2025 CardápioPro. Feito com ❤️ para empreendedores.</p>
+      {/* FOOTER */}
+      <footer className="bg-gray-950 border-t border-gray-900 py-10 text-center text-gray-600 text-sm">
+        <p>&copy; {new Date().getFullYear()} BarberPro. Todos os direitos reservados.</p>
+        <a href="/admin/login" className="text-gray-800 hover:text-gray-500 mt-4 inline-block text-xs">Área do Admin</a>
       </footer>
 
     </div>

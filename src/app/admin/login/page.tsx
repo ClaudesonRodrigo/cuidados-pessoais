@@ -11,7 +11,9 @@ export default function LoginPage() {
   const router = useRouter();
 
   const handleGoogleSignIn = async () => {
-    const user = await signInWithGoogle();
+    // AQUI ESTÁ O SEGREDO: Passamos 'owner'
+    // Quem entra por aqui quer GERENCIAR uma barbearia
+    const user = await signInWithGoogle('owner');
     if (user) {
       router.push('/admin/dashboard');
     } else {
@@ -35,7 +37,6 @@ export default function LoginPage() {
             Gerencie seus links, analise suas métricas e personalize sua página para atrair mais clientes.
           </p>
           <div className="bg-white/10 backdrop-blur-sm p-6 rounded-xl border border-white/20">
-            {/* CORREÇÃO AQUI: Trocamos as aspas duplas por &quot; */}
             <p className="italic">&quot;Desde que comecei a usar o Meus Links Pro, meus cliques no WhatsApp aumentaram 150%.&quot;</p>
             <div className="mt-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white/30"></div>

@@ -160,7 +160,11 @@ export const getPageDataBySlug = async (slug: string): Promise<DocumentData | nu
 export const getAllUsers = async (): Promise<(UserData & { uid: string, createdAt?: any })[]> => {
   try {
     const usersRef = collection(db, "users");
-    const snapshot = await getDocs(usersRef);
+    
+    // FILTRO NOVO: Trazer apenas quem é dono ('owner') ou admin
+    const q = query(usersRef, where("role", "in", ["owner", "admin"]));
+    
+    const snapshot = await getDocs(q);
     
     return snapshot.docs.map(doc => ({
       uid: doc.id,
@@ -278,7 +282,6 @@ export const updateAppointmentStatus = async (appointmentId: string, status: 'co
 };
 
 // --- ESCRITA ---
-// (Funções de escrita mantidas iguais...)
 export const addLinkToPage = async (pageSlug: string, newLink: LinkData): Promise<void> => {
   const pageDocRef = doc(db, "pages", pageSlug);
   await updateDoc(pageDocRef, { links: arrayUnion(newLink) });
