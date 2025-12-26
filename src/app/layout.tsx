@@ -17,6 +17,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Cardapio Digital -Aracaju",
+  metadataBase: new URL('https://www.cardapiocerto.com.br'),
   description: "Crie seu Cardapio personalizado e compartilhe com seus Clientes.",
   manifest: "/manifest.json",
   icons: {

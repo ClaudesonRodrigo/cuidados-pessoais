@@ -1,28 +1,32 @@
 // src/app/[slug]/page.tsx
 'use client';
 
-import { useEffect, useState, use, useMemo } from 'react';
-import { getPageDataBySlug, PageData, LinkData, CouponData } from "@/lib/pageService";
+import { useEffect, useState, use } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { signInWithGoogle } from '@/lib/authService';
+import { 
+  getPageDataBySlug, getAppointmentsByDate, createAppointment,
+  PageData, LinkData, AppointmentData 
+} from "@/lib/pageService";
+import { generateAvailableSlots } from '@/lib/availability';
+import { Timestamp } from 'firebase/firestore'; 
 import Link from 'next/link';
 import Image from 'next/image';
 import { 
-  FaMapMarkerAlt, FaWhatsapp, FaUtensils, FaPlus, FaMinus, 
-  FaShoppingCart, FaTrash, FaStoreSlash, FaExclamationTriangle,
-  FaMotorcycle, FaWalking, FaCreditCard, FaMoneyBillWave, FaQrcode, FaCopy, FaCheckCircle, FaTimes, FaLock, FaTag
+  FaMapMarkerAlt, FaWhatsapp, FaCut, FaCalendarAlt, FaClock, 
+  FaCheckCircle, FaTimes, FaStoreSlash, FaExclamationTriangle, FaShoppingBag, FaCopy, FaQrcode, FaGoogle
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
+import { QRCodeCanvas } from 'qrcode.react';
 
+// --- TIPOS ---
 interface ExtendedPageData extends PageData {
   backgroundImage?: string;
   plan?: string;
   isOpen?: boolean;
   whatsapp?: string;
-  pixKey?: string;
+  pixKey?: string; 
 }
-
-type CartItem = LinkData & { quantity: number; };
-type OrderMethod = 'delivery' | 'pickup';
-type PaymentMethod = 'pix' | 'card' | 'cash';
 
 // --- SKELETON ---
 function MenuSkeleton() {
@@ -42,37 +46,48 @@ function NotFoundState() {
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center font-sans text-gray-800">
             <div className="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full border border-gray-100">
                 <div className="bg-orange-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"><FaExclamationTriangle className="text-orange-500 text-4xl" /></div>
-                <h1 className="text-2xl font-bold mb-2">Cardápio Indisponível</h1>
-                <p className="text-gray-500 mb-6">O link que você acessou não existe ou o cardápio foi desativado.</p>
-                <Link href="/" className="block w-full bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-black transition">Criar meu Cardápio</Link>
+                <h1 className="text-2xl font-bold mb-2">Barbearia não encontrada</h1>
+                <p className="text-gray-500 mb-6">O link que você acessou não existe ou foi desativado.</p>
+                <Link href="/" className="block w-full bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-black transition">Criar minha Página</Link>
             </div>
         </div>
     );
 }
 
-export default function MenuPage({ params }: { params: Promise<{ slug: string }> }) {
+export default function SchedulingPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
+  const { user } = useAuth(); // Hook de Autenticação
   
   const [pageData, setPageData] = useState<ExtendedPageData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
-  const [selectedItem, setSelectedItem] = useState<LinkData | null>(null);
+  // CARRINHO & AGENDAMENTO
+  const [cart, setCart] = useState<LinkData[]>([]); 
+  const [isSelectorOpen, setIsSelectorOpen] = useState(false); 
   
-  const [orderMethod, setOrderMethod] = useState<OrderMethod>('delivery');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]); 
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  
+  // MODAL DE CHECKOUT
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
-  const [customerAddress, setCustomerAddress] = useState('');
-  const [pixCopied, setPixCopied] = useState(false);
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [isBooking, setIsBooking] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState('Copiar Chave Pix');
 
-  // --- LÓGICA DE CUPOM ---
-  const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<CouponData | null>(null);
-  const [couponError, setCouponError] = useState('');
+  // Cálculos
+  const totalDuration = cart.reduce((acc, item) => acc + (item.durationMinutes || 30), 0);
+  const totalPrice = cart.reduce((acc, item) => acc + parseFloat(item.price?.replace(',','.') || '0'), 0);
 
+  // Auto-preencher nome se logado
+  useEffect(() => {
+      if (user?.displayName) setCustomerName(user.displayName);
+  }, [user]);
+
+  // 1. Carregar Dados
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -81,8 +96,8 @@ export default function MenuPage({ params }: { params: Promise<{ slug: string }>
         if (!data) setError(true); 
         else {
             setPageData(data);
+            const theme = data.theme || 'dark';
             document.documentElement.className = "";
-            const theme = data.theme || 'restaurant';
             if (data.backgroundImage) document.documentElement.classList.add('theme-custom-image');
             else document.documentElement.classList.add(`theme-${theme}`);
         }
@@ -91,258 +106,323 @@ export default function MenuPage({ params }: { params: Promise<{ slug: string }>
     fetchData();
   }, [resolvedParams.slug]);
 
-  const categories = useMemo(() => {
-    if (!pageData?.links) return ['Todos'];
-    const cats = Array.from(new Set(pageData.links.map(l => l.category || 'Outros')));
-    return ['Todos', ...cats.sort()];
-  }, [pageData]);
+  // 2. Carregar Horários
+  useEffect(() => {
+    if (!pageData || totalDuration === 0 || !isSelectorOpen) return;
 
-  const filteredItems = useMemo(() => {
-    if (!pageData?.links) return [];
-    if (selectedCategory === 'Todos') return pageData.links;
-    return pageData.links.filter(l => (l.category || 'Outros') === selectedCategory);
-  }, [pageData, selectedCategory]);
+    const fetchSlots = async () => {
+        setLoadingSlots(true);
+        setAvailableSlots([]);
 
-  const cartSubtotal = cart.reduce((acc, item) => acc + (parseFloat(item.price?.replace(',', '.') || '0') * item.quantity), 0);
-  
-  // Calcula desconto
-  const discountAmount = useMemo(() => {
-      if (!appliedCoupon) return 0;
-      if (appliedCoupon.type === 'percent') {
-          return (cartSubtotal * appliedCoupon.value) / 100;
+        const startOfDay = new Date(selectedDate + 'T00:00:00');
+        const endOfDay = new Date(selectedDate + 'T23:59:59');
+
+        const busyAppointments = await getAppointmentsByDate(resolvedParams.slug, startOfDay, endOfDay);
+
+        const slots = generateAvailableSlots(
+            startOfDay, 
+            totalDuration, 
+            busyAppointments
+        );
+
+        setAvailableSlots(slots);
+        setLoadingSlots(false);
+    };
+
+    fetchSlots();
+  }, [selectedDate, totalDuration, pageData, resolvedParams.slug, isSelectorOpen]);
+
+  // --- HANDLERS ---
+
+  const toggleCartItem = (item: LinkData) => {
+      const exists = cart.find(i => i.title === item.title);
+      if (exists) {
+          setCart(cart.filter(i => i.title !== item.title));
+      } else {
+          setCart([...cart, item]);
       }
-      return appliedCoupon.value; // Fixed
-  }, [cartSubtotal, appliedCoupon]);
-
-  const cartTotal = Math.max(0, cartSubtotal - discountAmount);
-
-  const addToCart = (item: LinkData) => {
-    if (pageData?.isOpen === false) { alert("O estabelecimento está fechado no momento."); return; }
-    setCart(prev => {
-      const existing = prev.find(i => i.title === item.title);
-      if (existing) return prev.map(i => i.title === item.title ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { ...item, quantity: 1 }];
-    });
-    if (selectedItem) setSelectedItem(null);
+      setIsSelectorOpen(false); 
+      setSelectedTime(null);
   };
 
-  const removeFromCart = (title: string) => setCart(prev => prev.filter(i => i.title !== title));
-  const updateQuantity = (title: string, delta: number) => {
-    setCart(prev => prev.map(i => {
-      if (i.title === title) return { ...i, quantity: Math.max(1, i.quantity + delta) };
-      return i;
-    }));
+  const handleProceedToDate = () => {
+      if (cart.length === 0) return alert("Escolha pelo menos um serviço.");
+      setIsSelectorOpen(true);
+      setTimeout(() => {
+        document.getElementById('date-picker-section')?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
   };
 
-  const handleApplyCoupon = () => {
-      if (!pageData?.coupons || !couponCode) return;
-      
-      const found = pageData.coupons.find(c => c.code === couponCode.toUpperCase().trim());
-      
-      if (!found) {
-          setCouponError('Cupom inválido.');
-          setAppliedCoupon(null);
-          return;
-      }
-      
-      // Validações extras (Ex: valor mínimo) poderiam vir aqui
-      setAppliedCoupon(found);
-      setCouponError('');
+  const handleTimeClick = (time: string) => {
+      setSelectedTime(time);
+      setIsCheckoutOpen(true);
   };
 
   const handleCopyPix = () => {
       if (pageData?.pixKey) {
           navigator.clipboard.writeText(pageData.pixKey);
-          setPixCopied(true);
-          setTimeout(() => setPixCopied(false), 2000);
+          setCopyFeedback("Copiado!");
+          setTimeout(() => setCopyFeedback("Copiar Chave Pix"), 2000);
       }
   };
 
-  const handleCheckout = () => {
-    if (pageData?.isOpen === false) return;
-    if (!customerName.trim()) { alert("Por favor, digite seu nome."); return; }
-    if (orderMethod === 'delivery' && !customerAddress.trim()) { alert("Por favor, digite o endereço de entrega."); return; }
+  const handleLogin = async () => {
+      try {
+          await signInWithGoogle();
+          // Não precisa de redirect, o AuthContext atualiza o 'user' e o componente re-renderiza mostrando o form
+      } catch (error) {
+          alert("Erro ao fazer login com Google.");
+      }
+  };
 
-    let phone = pageData?.whatsapp || '5579996337995'; 
-    phone = phone.replace(/\D/g, ''); 
+  const handleConfirmBooking = async () => {
+      if (!customerName || !selectedTime || cart.length === 0 || !pageData || !user) return;
+      setIsBooking(true);
 
-    let message = `*NOVO PEDIDO 📋*\n------------------------------\n`;
-    message += `👤 *Cliente:* ${customerName}\n`;
-    message += `📦 *Tipo:* ${orderMethod === 'delivery' ? 'Entrega 🛵' : 'Retirada 🥡'}\n`;
-    if (orderMethod === 'delivery') message += `📍 *Endereço:* ${customerAddress}\n`;
-    message += `💰 *Pagamento:* ${paymentMethod === 'pix' ? 'Pix' : paymentMethod === 'card' ? 'Cartão' : 'Dinheiro'}\n`;
-    message += `------------------------------\n\n*ITENS DO PEDIDO:*\n`;
-    cart.forEach(item => { message += `▪️ ${item.quantity}x ${item.title}\n`; });
-    
-    // Resumo de Valores
-    message += `\nSubtotal: R$ ${cartSubtotal.toFixed(2).replace('.', ',')}`;
-    if (appliedCoupon) {
-        message += `\n🎁 Cupom (${appliedCoupon.code}): - R$ ${discountAmount.toFixed(2).replace('.', ',')}`;
-    }
-    message += `\n*TOTAL A PAGAR: R$ ${cartTotal.toFixed(2).replace('.', ',')}*`;
-    message += `\n\n_Enviado via CardápioPro_`;
+      try {
+          const [hours, minutes] = selectedTime.split(':').map(Number);
+          const startDate = new Date(selectedDate);
+          startDate.setHours(hours, minutes, 0, 0);
 
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+          const endDate = new Date(startDate.getTime() + totalDuration * 60000);
+          const servicesString = cart.map(i => i.title).join(' + ');
+
+          const newAppointment: AppointmentData = {
+              pageSlug: resolvedParams.slug,
+              serviceId: 'multi-services', 
+              serviceName: servicesString, 
+              
+              // Dados Vinculados ao Login
+              customerId: user.uid,
+              customerEmail: user.email || '',
+              customerPhoto: user.photoURL || '',
+              customerName,
+              customerPhone, // Whatsapp que ele digitou
+              
+              startAt: Timestamp.fromDate(startDate),
+              endAt: Timestamp.fromDate(endDate),
+              status: 'pending', 
+              totalValue: totalPrice,
+              createdAt: Timestamp.now()
+          };
+
+          await createAppointment(newAppointment);
+
+          // WhatsApp
+          const phone = pageData.whatsapp?.replace(/\D/g, '') || '';
+          let msg = `*NOVO AGENDAMENTO ✂️*\n\n`;
+          msg += `👤 *Cliente:* ${customerName}\n`;
+          msg += `📧 *Email:* ${user.email}\n`; // Mostra email no zap tb
+          msg += `📅 *Data:* ${startDate.toLocaleDateString('pt-BR')} às *${selectedTime}*\n`;
+          msg += `🛒 *Serviços:* ${servicesString}\n`;
+          msg += `⏱ *Duração:* ${totalDuration} min\n`;
+          msg += `💰 *Total:* R$ ${totalPrice.toFixed(2)}\n\n`;
+          msg += `_Solicitação enviada. Aguardando confirmação._`;
+
+          window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+          
+          setIsCheckoutOpen(false);
+          setCart([]);
+          setIsSelectorOpen(false);
+
+      } catch (error) {
+          alert("Erro ao processar. Tente novamente.");
+          console.error(error);
+      } finally {
+          setIsBooking(false);
+      }
   };
 
   const handleLocation = () => { if(pageData?.address) window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pageData.address)}`, '_blank'); };
 
   if (loading) return <MenuSkeleton />;
   if (error || !pageData) return <NotFoundState />;
-  const isPro = pageData.plan === 'pro';
+  
   const isClosed = pageData.isOpen === false;
+  const hasPix = !!pageData.pixKey; 
 
   return (
-    <div className="min-h-screen font-sans text-theme-text bg-theme-bg pb-32" style={pageData.backgroundImage ? { backgroundImage: `linear-gradient(rgba(0,0,0,0.8), rgba(0,0,0,0.9)), url(${pageData.backgroundImage})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' } : {}}>
+    <div className="min-h-screen font-sans text-white bg-gray-900 pb-40" 
+         style={pageData.backgroundImage ? { backgroundImage: `linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.95)), url(${pageData.backgroundImage})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' } : {}}>
+      
+      {/* HEADER */}
       <header className="pt-10 pb-6 px-4 text-center relative">
-        <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white/20 mx-auto bg-gray-800 mb-4 relative">
-            {pageData.profileImageUrl ? <Image src={pageData.profileImageUrl} alt="Logo" fill className="object-cover" sizes="96px" priority /> : <div className="flex items-center justify-center h-full text-white/30 text-3xl"><FaUtensils/></div>}
+        <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-orange-500 mx-auto bg-gray-800 mb-4 relative shadow-lg shadow-orange-500/20">
+            {pageData.profileImageUrl ? <Image src={pageData.profileImageUrl} alt="Logo" fill className="object-cover" sizes="96px" priority /> : <div className="flex items-center justify-center h-full text-white/30 text-3xl"><FaCut/></div>}
         </div>
-        <h1 className="text-2xl font-bold mb-2">{pageData.title}</h1>
-        <p className="text-white/70 text-sm max-w-md mx-auto">{pageData.bio}</p>
-        {isClosed && <div className="bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full inline-flex items-center gap-1 mt-2 animate-pulse"><FaStoreSlash/> FECHADO AGORA</div>}
-        {isPro && pageData.address && <div className="flex justify-center mt-4"><button onClick={handleLocation} className="bg-white/10 backdrop-blur border border-white/20 text-white px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:bg-white/20 transition"><FaMapMarkerAlt /> Como Chegar</button></div>}
+        <h1 className="text-2xl font-bold mb-2 text-white">{pageData.title}</h1>
+        <p className="text-gray-400 text-sm max-w-md mx-auto">{pageData.bio}</p>
+        
+        {isClosed ? (
+            <div className="bg-red-600/20 border border-red-500 text-red-400 text-xs font-bold px-4 py-2 rounded-full inline-flex items-center gap-2 mt-4"><FaStoreSlash/> FECHADO NO MOMENTO</div>
+        ) : (
+             pageData.address && <button onClick={handleLocation} className="mt-4 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 mx-auto transition"><FaMapMarkerAlt className="text-orange-500" /> Ver Endereço</button>
+        )}
       </header>
 
-      <div className="sticky top-0 z-20 bg-theme-bg/95 backdrop-blur py-4 border-b border-white/10">
-        <div className="flex overflow-x-auto px-4 gap-2 no-scrollbar">
-            {categories.map(cat => <button key={cat} onClick={() => setSelectedCategory(cat)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${selectedCategory === cat ? 'bg-orange-500 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}>{cat}</button>)}
+      <main className="container mx-auto max-w-lg px-4 space-y-8">
+        
+        {/* SERVIÇOS */}
+        <div>
+            <h2 className="text-orange-500 font-bold text-sm uppercase tracking-wider mb-4 flex items-center gap-2"><FaCut/> Escolha os Serviços</h2>
+            <div className="space-y-3">
+                {pageData.links?.map((item, index) => {
+                    const isInCart = cart.some(i => i.title === item.title);
+                    return (
+                        <motion.div 
+                            key={index} 
+                            initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} transition={{delay: index*0.05}}
+                            onClick={() => !isClosed && toggleCartItem(item)}
+                            className={`bg-gray-800/50 border ${isInCart ? 'border-orange-500 bg-orange-500/10' : 'border-gray-700 hover:border-gray-600'} rounded-xl p-4 flex gap-4 cursor-pointer transition-all group relative`}
+                        >
+                            {isInCart && <div className="absolute top-2 right-2 text-orange-500 bg-orange-500/20 rounded-full p-1"><FaCheckCircle/></div>}
+                            {item.imageUrl && <div className="w-16 h-16 rounded-lg bg-gray-700 relative overflow-hidden shrink-0"><Image src={item.imageUrl} alt={item.title} fill className="object-cover" sizes="64px" /></div>}
+                            <div className="flex-1">
+                                <div className="flex justify-between items-start pr-6">
+                                    <h3 className={`font-bold ${isInCart ? 'text-orange-400' : 'text-white'}`}>{item.title}</h3>
+                                    {item.price && <span className="text-white font-bold text-sm bg-gray-700 px-2 py-1 rounded">R$ {item.price}</span>}
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1 line-clamp-1">{item.description}</p>
+                                <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                                    <FaClock size={10}/> {item.durationMinutes || 30} min
+                                </div>
+                            </div>
+                        </motion.div>
+                    );
+                })}
+            </div>
         </div>
-      </div>
 
-      <main className="container mx-auto max-w-2xl px-4 mt-6 space-y-4">
-        {filteredItems.map((item, index) => (
-            <motion.div key={index} onClick={() => setSelectedItem(item)} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className={`bg-white/5 border border-white/10 rounded-xl p-3 flex gap-4 cursor-pointer hover:bg-white/10 transition ${isClosed ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}>
-                {item.imageUrl && <div className="w-24 h-24 rounded-lg bg-gray-800 relative overflow-hidden shrink-0"><Image src={item.imageUrl} alt={item.title} fill className="object-cover" sizes="96px" /></div>}
-                <div className="flex-1 flex flex-col">
-                    <div className="flex justify-between items-start"><h3 className="font-bold text-white">{item.title}</h3>{item.price && <span className="text-orange-400 font-bold text-sm">R$ {item.price}</span>}</div>
-                    <p className="text-xs text-white/60 line-clamp-2 mt-1 mb-2">{item.description}</p>
-                    <div className="mt-auto flex justify-end">
-                        <button onClick={(e) => { e.stopPropagation(); addToCart(item); }} disabled={isClosed} className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${isClosed ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-white/10 text-white hover:bg-orange-500'}`}>
-                            {isClosed ? 'Fechado' : <>Adicionar <FaPlus size={8}/></>}
-                        </button>
+        {/* CALENDÁRIO */}
+        <AnimatePresence>
+            {isSelectorOpen && !isClosed && (
+                <motion.div 
+                    id="date-picker-section"
+                    initial={{opacity: 0, height: 0}} animate={{opacity: 1, height: 'auto'}} exit={{opacity: 0, height: 0}}
+                    className="space-y-6 pt-8 border-t border-gray-800"
+                >
+                    <div className="bg-gray-800/40 p-4 rounded-xl border border-gray-700">
+                        <h3 className="text-white font-bold mb-1 flex items-center gap-2"><FaShoppingBag className="text-orange-500"/> Resumo do Pedido</h3>
+                        <p className="text-gray-400 text-xs">Você selecionou: <span className="text-white">{cart.map(i=>i.title).join(', ')}</span></p>
+                        <p className="text-gray-400 text-xs">Tempo Total estimado: <span className="text-white font-bold">{totalDuration} min</span></p>
                     </div>
-                </div>
-            </motion.div>
-        ))}
+
+                    <div>
+                        <h2 className="text-orange-500 font-bold text-sm uppercase tracking-wider mb-4 flex items-center gap-2"><FaCalendarAlt/> Escolha a Data</h2>
+                        <input type="date" value={selectedDate} min={new Date().toISOString().split('T')[0]} onChange={(e) => setSelectedDate(e.target.value)} className="w-full bg-gray-800 text-white border border-gray-700 rounded-xl p-4 font-bold outline-none focus:border-orange-500" />
+                    </div>
+
+                    <div>
+                        <h2 className="text-orange-500 font-bold text-sm uppercase tracking-wider mb-4 flex items-center gap-2"><FaClock/> Horários Disponíveis</h2>
+                        {loadingSlots ? (
+                            <div className="flex justify-center py-8"><div className="animate-spin w-6 h-6 border-2 border-orange-500 rounded-full border-t-transparent"/></div>
+                        ) : availableSlots.length > 0 ? (
+                            <div className="grid grid-cols-4 gap-2">
+                                {availableSlots.map(time => (
+                                    <button key={time} onClick={() => handleTimeClick(time)} className="bg-gray-800 border border-gray-700 hover:border-orange-500 hover:bg-orange-500 hover:text-white text-gray-300 py-2 rounded-lg text-sm font-bold transition">
+                                        {time}
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-6 bg-gray-800/30 rounded-xl border border-gray-800">
+                                <p className="text-gray-400 text-sm">Nenhum horário livre para essa combinação.</p>
+                                <p className="text-xs text-gray-600 mt-1">Tente diminuir os serviços ou mudar a data.</p>
+                            </div>
+                        )}
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
       </main>
 
+      {/* FOOTER FIXO */}
+      {!isSelectorOpen && cart.length > 0 && !isClosed && (
+          <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-4 z-40 pb-8">
+              <div className="container mx-auto max-w-lg flex items-center justify-between">
+                  <div>
+                      <p className="text-gray-400 text-xs">Total a pagar</p>
+                      <p className="text-white font-bold text-xl">R$ {totalPrice.toFixed(2)}</p>
+                  </div>
+                  <button onClick={handleProceedToDate} className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-orange-900/20 transition">
+                      Agendar Horário
+                  </button>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL CHECKOUT */}
       <AnimatePresence>
-        {selectedItem && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedItem(null)} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-                <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onClick={(e) => e.stopPropagation()} className="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl relative flex flex-col max-h-[85vh]">
-                    <button onClick={() => setSelectedItem(null)} className="absolute top-3 right-3 z-10 bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition backdrop-blur-md"><FaTimes /></button>
-                    <div className="w-full h-64 relative bg-gray-100 shrink-0">{selectedItem.imageUrl ? <Image src={selectedItem.imageUrl} alt={selectedItem.title} fill className="object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-300 text-6xl"><FaUtensils/></div>}</div>
-                    <div className="p-6 overflow-y-auto">
-                        <div className="flex justify-between items-start mb-2"><h2 className="text-2xl font-bold text-gray-800 leading-tight">{selectedItem.title}</h2>{selectedItem.price && <span className="text-xl font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded">R$ {selectedItem.price}</span>}</div>
-                        <span className="inline-block px-2 py-1 rounded bg-gray-100 text-xs font-bold text-gray-500 mb-4">{selectedItem.category || 'Geral'}</span>
-                        <p className="text-gray-600 text-sm leading-relaxed mb-6">{selectedItem.description || "Sem descrição adicional para este item."}</p>
+        {isCheckoutOpen && (
+            <motion.div initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/90 backdrop-blur-sm">
+                <motion.div 
+                    initial={{y: '100%'}} animate={{y: 0}} exit={{y: '100%'}} 
+                    className="bg-gray-900 w-full max-w-sm sm:rounded-2xl rounded-t-3xl border border-gray-700 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+                >
+                    <div className="p-6 space-y-6">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="text-xl font-bold text-white">Confirmação</h3>
+                                <p className="text-xs text-gray-400">Finalize para garantir seu horário</p>
+                            </div>
+                            <button onClick={() => setIsCheckoutOpen(false)} className="text-gray-500 hover:text-white bg-gray-800 p-2 rounded-full"><FaTimes/></button>
+                        </div>
+
+                        {/* ÁREA DE LOGIN (TRAVA) */}
+                        {!user ? (
+                            <div className="bg-orange-900/20 border border-orange-500/50 rounded-xl p-6 text-center space-y-4">
+                                <p className="text-orange-200 font-bold text-sm">🔒 Você precisa entrar para agendar</p>
+                                <p className="text-xs text-gray-400">Para sua segurança e histórico, faça login com sua conta Google.</p>
+                                <button onClick={handleLogin} className="w-full bg-white text-gray-900 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-100 transition">
+                                    <FaGoogle className="text-red-500"/> Entrar com Google
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                {/* LOGADO: MOSTRA RESUMO E PIX */}
+                                <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700 space-y-2 text-sm">
+                                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-700">
+                                        {user.photoURL && <img src={user.photoURL} className="w-6 h-6 rounded-full" alt="avatar"/>}
+                                        <p className="text-gray-300 text-xs">Logado como <span className="text-white font-bold">{user.displayName}</span></p>
+                                    </div>
+                                    <div className="flex justify-between"><span className="text-gray-400">Data:</span> <span className="font-bold text-white">{new Date(selectedDate).toLocaleDateString('pt-BR')} às {selectedTime}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-400">Total:</span> <span className="font-bold text-green-400">R$ {totalPrice.toFixed(2)}</span></div>
+                                </div>
+
+                                {/* PIX */}
+                                {hasPix ? (
+                                    <div className="bg-gray-800 p-4 rounded-xl text-center border border-dashed border-gray-600">
+                                        <p className="text-orange-500 font-bold text-sm mb-3 flex justify-center items-center gap-2"><FaQrcode/> Pagamento via Pix</p>
+                                        <div className="bg-white p-2 rounded inline-block mb-3">
+                                            <QRCodeCanvas value={pageData.pixKey!} size={120} />
+                                        </div>
+                                        <button onClick={handleCopyPix} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg flex items-center gap-2 mx-auto transition border border-gray-600">
+                                            <FaCopy/> {copyFeedback}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="bg-yellow-900/20 p-3 rounded-lg border border-yellow-700/50 text-center"><p className="text-yellow-500 text-xs">Pagamento no local.</p></div>
+                                )}
+
+                                {/* FORM FINAL */}
+                                <div className="space-y-3 pt-2">
+                                    <input type="tel" placeholder="Seu WhatsApp (para confirmação)" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 text-white outline-none focus:border-orange-500 transition" />
+                                    
+                                    <button 
+                                        onClick={handleConfirmBooking}
+                                        disabled={isBooking || !customerPhone}
+                                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-lg shadow-green-900/20"
+                                    >
+                                        {isBooking ? 'Agendando...' : <><FaWhatsapp size={22}/> {hasPix ? 'Enviar Comprovante' : 'Confirmar'}</>}
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
-                    <div className="p-4 border-t border-gray-100 bg-gray-50"><button onClick={() => addToCart(selectedItem)} disabled={isClosed} className={`w-full py-3 rounded-xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg transition transform active:scale-95 ${isClosed ? 'bg-gray-400 cursor-not-allowed text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}>{isClosed ? 'Loja Fechada' : <>Adicionar ao Pedido <FaPlus/></>}</button></div>
                 </motion.div>
             </motion.div>
         )}
       </AnimatePresence>
-
-      <AnimatePresence>
-        {cart.length > 0 && (
-            <motion.div initial={{y: 100}} animate={{y: 0}} exit={{y: 100}} className="fixed bottom-4 left-4 right-4 max-w-2xl mx-auto z-30">
-                <button onClick={() => setIsCartOpen(true)} className="w-full bg-green-600 text-white p-4 rounded-xl shadow-2xl flex justify-between items-center font-bold">
-                    <div className="flex items-center gap-2"><div className="bg-black/20 w-8 h-8 rounded-full flex items-center justify-center text-sm">{cart.reduce((a,b)=>a+b.quantity,0)}</div><span>Ver Carrinho</span></div><span>R$ {cartTotal.toFixed(2).replace('.', ',')}</span>
-                </button>
-            </motion.div>
-        )}
-      </AnimatePresence>
-
-      {isCartOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-4">
-            <motion.div initial={{y: 100}} animate={{y: 0}} className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 text-gray-900 max-h-[90vh] overflow-y-auto flex flex-col shadow-2xl">
-                <div className="flex justify-between items-center mb-6 border-b pb-4"><h2 className="text-xl font-bold flex items-center gap-2"><FaShoppingCart/> Seu Pedido</h2><button onClick={() => setIsCartOpen(false)} className="text-gray-400 hover:text-gray-600 font-bold">Fechar</button></div>
-                
-                <div className="flex-1 space-y-4 mb-6">
-                    {cart.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0">
-                            <div><p className="font-bold text-sm">{item.title}</p><p className="text-orange-600 text-xs font-bold">R$ {item.price}</p></div>
-                            <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-1"><button onClick={() => updateQuantity(item.title, -1)} className="p-1 hover:bg-white rounded"><FaMinus size={10}/></button><span className="text-sm font-bold w-4 text-center">{item.quantity}</span><button onClick={() => updateQuantity(item.title, 1)} className="p-1 hover:bg-white rounded"><FaPlus size={10}/></button></div><button onClick={() => removeFromCart(item.title)} className="text-red-400 hover:text-red-600 p-2"><FaTrash size={12}/></button>
-                        </div>
-                    ))}
-                </div>
-
-                <div className="bg-gray-50 p-4 rounded-xl space-y-3 mb-4 border border-gray-200">
-                    <h3 className="font-bold text-sm text-gray-700">Detalhes da Entrega</h3>
-                    <input type="text" placeholder="Seu Nome" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full border p-2 rounded text-sm outline-none focus:border-green-500" />
-                    <div className="flex gap-2">
-                        <button onClick={() => setOrderMethod('delivery')} className={`flex-1 py-2 rounded text-xs font-bold flex items-center justify-center gap-1 border ${orderMethod === 'delivery' ? 'bg-orange-100 border-orange-500 text-orange-700' : 'bg-white border-gray-300 text-gray-500'}`}><FaMotorcycle/> Entrega</button>
-                        <button onClick={() => setOrderMethod('pickup')} className={`flex-1 py-2 rounded text-xs font-bold flex items-center justify-center gap-1 border ${orderMethod === 'pickup' ? 'bg-orange-100 border-orange-500 text-orange-700' : 'bg-white border-gray-300 text-gray-500'}`}><FaWalking/> Retirada</button>
-                    </div>
-                    {orderMethod === 'delivery' && <textarea placeholder="Endereço completo (Rua, Número, Bairro...)" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} className="w-full border p-2 rounded text-sm outline-none focus:border-green-500 h-16 resize-none animate-in fade-in slide-in-from-top-1" />}
-                    
-                    {/* ÁREA DE CUPOM */}
-                    <div className="flex gap-2 items-end">
-                        <div className="flex-1">
-                            <label className="text-[10px] font-bold text-gray-500 uppercase">Cupom de Desconto</label>
-                            <div className="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    placeholder="Código" 
-                                    value={couponCode} 
-                                    onChange={e => setCouponCode(e.target.value)} 
-                                    disabled={!!appliedCoupon}
-                                    className="w-full border p-2 rounded text-sm outline-none uppercase font-bold text-gray-700 disabled:bg-gray-100" 
-                                />
-                                {appliedCoupon ? (
-                                    <button onClick={() => { setAppliedCoupon(null); setCouponCode(''); }} className="bg-red-100 text-red-600 px-3 rounded text-sm font-bold"><FaTrash/></button>
-                                ) : (
-                                    <button onClick={handleApplyCoupon} className="bg-purple-600 text-white px-4 rounded text-sm font-bold hover:bg-purple-700">Aplicar</button>
-                                )}
-                            </div>
-                            {couponError && <p className="text-red-500 text-xs mt-1">{couponError}</p>}
-                            {appliedCoupon && <p className="text-green-600 text-xs mt-1 font-bold flex items-center gap-1"><FaCheckCircle/> Cupom aplicado: - R$ {discountAmount.toFixed(2)}</p>}
-                        </div>
-                    </div>
-
-                    <div className="flex gap-2 pt-2">
-                        {[{ id: 'pix', label: 'Pix', icon: FaQrcode }, { id: 'card', label: 'Cartão', icon: FaCreditCard }, { id: 'cash', label: 'Dinheiro', icon: FaMoneyBillWave }].map(pm => (
-                            <button key={pm.id} onClick={() => setPaymentMethod(pm.id as PaymentMethod)} className={`flex-1 py-2 rounded text-[10px] sm:text-xs font-bold flex flex-col items-center gap-1 border transition ${paymentMethod === pm.id ? 'bg-green-100 border-green-500 text-green-700' : 'bg-white border-gray-300 text-gray-500'}`}>
-                                <pm.icon size={14} /> {pm.label}
-                            </button>
-                        ))}
-                    </div>
-                    
-                    {paymentMethod === 'pix' && (
-                        <div className="mt-4 p-4 bg-white border border-gray-200 rounded-xl text-center animate-in fade-in zoom-in shadow-sm">
-                            {isPro ? (
-                                pageData?.pixKey ? (
-                                    <>
-                                        <p className="text-xs font-bold text-gray-500 mb-2">Escaneie para pagar</p>
-                                        <div className="bg-white p-1 inline-block mb-3"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(pageData.pixKey)}`} alt="QR Pix" className="w-32 h-32 mx-auto mix-blend-multiply" /></div>
-                                        <div className="bg-gray-100 p-2 rounded text-xs text-gray-600 font-mono break-all mb-2">{pageData.pixKey}</div>
-                                        <button onClick={handleCopyPix} className={`w-full py-2 rounded-lg text-xs font-bold transition-all ${pixCopied ? 'bg-green-500 text-white' : 'bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200'}`}>{pixCopied ? <><FaCheckCircle className="inline mr-1"/> Copiado!</> : <><FaCopy className="inline mr-1"/> Copiar Chave Pix</>}</button>
-                                    </>
-                                ) : <p className="text-xs text-gray-400 italic">Chave Pix não cadastrada pelo estabelecimento.</p>
-                            ) : (
-                                <div className="flex flex-col items-center gap-2"><div className="bg-gray-100 p-2 rounded-full"><FaLock className="text-gray-400" /></div><p className="text-xs text-gray-500 font-bold">QR Code Automático Indisponível</p><p className="text-[10px] text-gray-400">Este é um recurso do plano Profissional.</p></div>
-                            )}
-                        </div>
-                    )}
-                </div>
-
-                <div className="border-t pt-4">
-                    <div className="space-y-1 mb-4">
-                        <div className="flex justify-between text-sm text-gray-500"><span>Subtotal</span><span>R$ {cartSubtotal.toFixed(2).replace('.', ',')}</span></div>
-                        {appliedCoupon && (
-                            <div className="flex justify-between text-sm text-green-600 font-bold">
-                                <span>Desconto ({appliedCoupon.code})</span>
-                                <span>- R$ {discountAmount.toFixed(2).replace('.', ',')}</span>
-                            </div>
-                        )}
-                        <div className="flex justify-between text-lg font-bold text-gray-900 mt-2"><span>Total</span><span>R$ {cartTotal.toFixed(2).replace('.', ',')}</span></div>
-                    </div>
-                    {isClosed ? <div className="w-full bg-red-100 text-red-600 py-3 rounded-xl font-bold text-center border border-red-200">LOJA FECHADA</div> : <button onClick={handleCheckout} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-green-700 flex justify-center items-center gap-2 transform active:scale-95 transition"><FaWhatsapp size={20}/> Enviar Pedido no Zap</button>}
-                </div>
-            </motion.div>
-        </div>
-      )}
     </div>
   );
 }
