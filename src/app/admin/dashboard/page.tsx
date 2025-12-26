@@ -84,6 +84,13 @@ export default function DashboardPage() {
   const [editingProfileWhatsapp, setEditingProfileWhatsapp] = useState('');
   const [editingProfilePix, setEditingProfilePix] = useState('');
   const [isOpenStore, setIsOpenStore] = useState(true);
+  
+  // --- NOVOS CAMPOS DE HORÁRIO ---
+  const [schedOpen, setSchedOpen] = useState('09:00');
+  const [schedClose, setSchedClose] = useState('19:00');
+  const [schedLunchStart, setSchedLunchStart] = useState('');
+  const [schedLunchEnd, setSchedLunchEnd] = useState('');
+
   const [isUploadingProfile, setIsUploadingProfile] = useState(false);
   const [isUploadingBg, setIsUploadingBg] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
@@ -92,10 +99,6 @@ export default function DashboardPage() {
   // ADMIN STATE
   const isAdmin = userData?.role === 'admin';
   const [allUsers, setAllUsers] = useState<any[]>([]);
-  // Search
-  const [searchEmail, setSearchEmail] = useState('');
-  const [foundUser, setFoundUser] = useState<(UserData & { uid: string }) | null>(null);
-  const [adminMessage, setAdminMessage] = useState<string | null>(null);
 
   const isProPlan = (pageData?.plan === 'pro');
   const existingCategories = Array.from(new Set(pageData?.links?.map(l => l.category).filter(Boolean) || []));
@@ -130,6 +133,7 @@ export default function DashboardPage() {
         setPageData(data);
         setPageSlug(result.slug);
         
+        // Populate Inputs
         setEditingProfileTitle(data.title || '');
         setEditingProfileBio(data.bio || '');
         setEditingProfileAddress(data.address || '');
@@ -138,6 +142,14 @@ export default function DashboardPage() {
         setEditingProfileWhatsapp(loadedWhats);
         setEditingProfilePix((data as any).pixKey || '');
         setIsOpenStore(data.isOpen !== false);
+
+        // Populate Schedule
+        if (data.schedule) {
+            setSchedOpen(data.schedule.open || '09:00');
+            setSchedClose(data.schedule.close || '19:00');
+            setSchedLunchStart(data.schedule.lunchStart || '');
+            setSchedLunchEnd(data.schedule.lunchEnd || '');
+        }
 
         if (data.plan === 'pro' && data.trialDeadline) {
             const now = new Date();
@@ -254,7 +266,24 @@ export default function DashboardPage() {
   const handleSaveProfile = async () => {
       if(!pageSlug) return;
       const whatsappToSave = editingProfileWhatsapp ? `55${editingProfileWhatsapp.replace(/\D/g, '')}` : '';
-      await updatePageProfileInfo(pageSlug, editingProfileTitle, editingProfileBio, isProPlan ? editingProfileAddress : '', isOpenStore, whatsappToSave, isProPlan ? editingProfilePix : '');
+      
+      const schedule = {
+          open: schedOpen,
+          close: schedClose,
+          lunchStart: schedLunchStart,
+          lunchEnd: schedLunchEnd
+      };
+
+      await updatePageProfileInfo(
+          pageSlug, 
+          editingProfileTitle, 
+          editingProfileBio, 
+          isProPlan ? editingProfileAddress : '', 
+          isOpenStore, 
+          whatsappToSave, 
+          isProPlan ? editingProfilePix : '',
+          schedule // SALVA OS HORÁRIOS
+      );
       alert("Dados salvos com sucesso!");
       fetchPageData();
   };
@@ -422,7 +451,7 @@ export default function DashboardPage() {
             </div>
         )}
 
-        {/* ... (TABS SERVICES E PROFILE MANTIDAS IGUAIS, APENAS COPIE O RESTO DO CÓDIGO ANTERIOR SE NECESSÁRIO) ... */}
+        {/* === ABA: SERVIÇOS === */}
         {activeTab === 'services' && (
              <div className="space-y-6">
                  {/* Form Add */}
@@ -493,7 +522,7 @@ export default function DashboardPage() {
              </div>
         )}
 
-        {/* === ABA: PERFIL === */}
+        {/* === ABA: PERFIL (ATUALIZADA COM HORÁRIOS) === */}
         {activeTab === 'profile' && (
              <div className="space-y-6">
                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6 items-start">
@@ -522,6 +551,29 @@ export default function DashboardPage() {
                              <FaKey className="text-blue-500" />
                              <input type="text" value={editingProfilePix} onChange={e => setEditingProfilePix(e.target.value)} className={`w-full text-sm bg-transparent outline-none ${!isProPlan ? 'cursor-not-allowed' : ''}`} placeholder={isProPlan ? "Chave Pix (CPF, Email, Telefone)" : "Chave Pix (Recurso Pro)"} disabled={!isProPlan}/>
                              {!isProPlan && <FaLock className="text-gray-400" />}
+                         </div>
+
+                         {/* CONFIGURAÇÃO DE HORÁRIOS (NOVO) */}
+                         <div className="border-t pt-4 mt-2">
+                             <h4 className="font-bold text-sm text-gray-700 mb-3 flex items-center gap-2"><FaClock className="text-orange-500"/> Horário de Funcionamento</h4>
+                             <div className="grid grid-cols-2 gap-4">
+                                 <div>
+                                     <label className="text-xs font-bold text-gray-500 block mb-1">Abre às</label>
+                                     <input type="time" value={schedOpen} onChange={e => setSchedOpen(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/>
+                                 </div>
+                                 <div>
+                                     <label className="text-xs font-bold text-gray-500 block mb-1">Fecha às</label>
+                                     <input type="time" value={schedClose} onChange={e => setSchedClose(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/>
+                                 </div>
+                                 <div>
+                                     <label className="text-xs font-bold text-gray-500 block mb-1">Início Almoço</label>
+                                     <input type="time" value={schedLunchStart} onChange={e => setSchedLunchStart(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/>
+                                 </div>
+                                 <div>
+                                     <label className="text-xs font-bold text-gray-500 block mb-1">Fim Almoço</label>
+                                     <input type="time" value={schedLunchEnd} onChange={e => setSchedLunchEnd(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/>
+                                 </div>
+                             </div>
                          </div>
  
                          <button onClick={() => setIsOpenStore(!isOpenStore)} className={`w-full py-2 rounded font-bold flex justify-center items-center gap-2 ${isOpenStore?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{isOpenStore?<><FaDoorOpen/> Aberto</>:<><FaDoorClosed/> Fechado</>}</button>
@@ -556,7 +608,7 @@ export default function DashboardPage() {
              </div>
         )}
 
-        {/* --- SUPER ADMIN PANEL (NOVO E MELHORADO) --- */}
+        {/* --- SUPER ADMIN PANEL --- */}
         {isAdmin && (
             <div className="mt-12 bg-gray-900 text-white p-6 rounded-xl border border-gray-800">
                 <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-orange-500"><FaCrown/> Painel Super Admin</h3>

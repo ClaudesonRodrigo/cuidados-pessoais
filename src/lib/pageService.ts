@@ -31,6 +31,15 @@ export type CouponData = {
   active: boolean;    
 };
 
+// NOVO: Estrutura de Horários
+export type ScheduleData = {
+    open: string;       // "09:00"
+    close: string;      // "19:00"
+    lunchStart?: string; // "12:00"
+    lunchEnd?: string;   // "13:00"
+    workingDays?: number[]; // [1,2,3,4,5,6] (Seg-Sab) - Futuro
+};
+
 export type PageData = {
   title: string;
   bio: string;
@@ -47,6 +56,7 @@ export type PageData = {
   plan?: string;
   trialDeadline?: Timestamp;
   isOpen?: boolean;
+  schedule?: ScheduleData; // NOVO CAMPO
   createdAt?: any;
 };
 
@@ -55,14 +65,11 @@ export type AppointmentData = {
   pageSlug: string;
   serviceId?: string;
   serviceName: string;
-  
-  // Dados do Cliente
   customerId?: string; 
   customerEmail?: string; 
   customerPhoto?: string;
   customerName: string;
   customerPhone: string;
-  
   startAt: Timestamp; 
   endAt: Timestamp;   
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
@@ -160,12 +167,8 @@ export const getPageDataBySlug = async (slug: string): Promise<DocumentData | nu
 export const getAllUsers = async (): Promise<(UserData & { uid: string, createdAt?: any })[]> => {
   try {
     const usersRef = collection(db, "users");
-    
-    // FILTRO NOVO: Trazer apenas quem é dono ('owner') ou admin
     const q = query(usersRef, where("role", "in", ["owner", "admin"]));
-    
     const snapshot = await getDocs(q);
-    
     return snapshot.docs.map(doc => ({
       uid: doc.id,
       ...(doc.data() as UserData)
@@ -181,19 +184,16 @@ export const getAllUsers = async (): Promise<(UserData & { uid: string, createdA
 export const getAppointmentsByDate = async (pageSlug: string, dateStart: Date, dateEnd: Date): Promise<AppointmentData[]> => {
   try {
     const appsRef = collection(db, "appointments");
-    // Range de data para Availability
     const q = query(
       appsRef, 
       where("pageSlug", "==", pageSlug),
       where("startAt", ">=", Timestamp.fromDate(dateStart)),
       where("startAt", "<=", Timestamp.fromDate(dateEnd))
     );
-    
     const snapshot = await getDocs(q);
     const appointments = snapshot.docs
       .map(doc => ({ id: doc.id, ...doc.data() } as AppointmentData))
       .filter(a => a.status !== 'cancelled');
-      
     return appointments;
   } catch (error) {
     console.error("Erro ao buscar agendamentos:", error);
@@ -204,12 +204,10 @@ export const getAppointmentsByDate = async (pageSlug: string, dateStart: Date, d
 export const getUpcomingAppointments = async (pageSlug: string): Promise<AppointmentData[]> => {
     try {
         const appsRef = collection(db, "appointments");
-        // Busca TUDO pelo slug (sem filtro de data no banco para evitar erro de índice)
         const q = query(appsRef, where("pageSlug", "==", pageSlug));
         const snapshot = await getDocs(q);
         const apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppointmentData));
 
-        // Filtra HOJE ou FUTURO no Javascript
         const today = new Date();
         today.setHours(0,0,0,0);
 
@@ -225,7 +223,6 @@ export const getUpcomingAppointments = async (pageSlug: string): Promise<Appoint
                  const dB = (b.startAt as any).toDate ? (b.startAt as any).toDate() : new Date(b.startAt as any);
                  return dA.getTime() - dB.getTime();
             });
-
         return filtered;
     } catch (error) {
         console.error("Erro CRÍTICO ao buscar agenda:", error);
@@ -233,21 +230,16 @@ export const getUpcomingAppointments = async (pageSlug: string): Promise<Appoint
     }
 };
 
-// NOVO: Busca Histórico do Cliente
 export const getAppointmentsByCustomer = async (pageSlug: string, customerId: string): Promise<AppointmentData[]> => {
     try {
         const appsRef = collection(db, "appointments");
-        // Filtra pelo Slug e pelo ID do cliente
         const q = query(
             appsRef, 
             where("pageSlug", "==", pageSlug),
             where("customerId", "==", customerId)
         );
-        
         const snapshot = await getDocs(q);
         const apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppointmentData));
-
-        // Ordena mais recente primeiro
         return apps.sort((a, b) => {
              const dA = (a.startAt as any).toDate ? (a.startAt as any).toDate() : new Date(a.startAt as any);
              const dB = (b.startAt as any).toDate ? (b.startAt as any).toDate() : new Date(b.startAt as any);
@@ -258,7 +250,6 @@ export const getAppointmentsByCustomer = async (pageSlug: string, customerId: st
         return [];
     }
 };
-
 
 export const createAppointment = async (appointment: AppointmentData): Promise<string> => {
   try {
@@ -282,38 +273,51 @@ export const updateAppointmentStatus = async (appointmentId: string, status: 'co
 };
 
 // --- ESCRITA ---
+
 export const addLinkToPage = async (pageSlug: string, newLink: LinkData): Promise<void> => {
   const pageDocRef = doc(db, "pages", pageSlug);
   await updateDoc(pageDocRef, { links: arrayUnion(newLink) });
 };
+
 export const deleteLinkFromPage = async (pageSlug: string, linkToDelete: LinkData): Promise<void> => {
   const pageDocRef = doc(db, "pages", pageSlug);
   await updateDoc(pageDocRef, { links: arrayRemove(linkToDelete) });
 };
+
 export const updateLinksOnPage = async (pageSlug: string, updatedLinks: LinkData[]): Promise<void> => {
   const pageDocRef = doc(db, "pages", pageSlug);
   await updateDoc(pageDocRef, { links: updatedLinks });
 };
+
 export const updatePageCoupons = async (pageSlug: string, coupons: CouponData[]): Promise<void> => {
   const pageDocRef = doc(db, "pages", pageSlug);
   await updateDoc(pageDocRef, { coupons });
 };
+
 export const updatePageTheme = async (pageSlug: string, theme: string): Promise<void> => {
   await updateDoc(doc(db, "pages", pageSlug), { theme });
 };
+
 export const updatePageBackground = async (pageSlug: string, imageUrl: string): Promise<void> => {
   await updateDoc(doc(db, "pages", pageSlug), { backgroundImage: imageUrl });
 };
+
 export const updateProfileImage = async (pageSlug: string, imageUrl: string): Promise<void> => {
   await updateDoc(doc(db, "pages", pageSlug), { profileImageUrl: imageUrl });
 };
+
+// ATUALIZADO: Aceita o objeto 'schedule'
 export const updatePageProfileInfo = async (
     pageSlug: string, title: string, bio: string, address: string, 
-    isOpen: boolean, whatsapp: string, pixKey: string
+    isOpen: boolean, whatsapp: string, pixKey: string,
+    schedule?: ScheduleData // Novo Parâmetro
 ): Promise<void> => {
-  const dataToUpdate = { title, bio, address, isOpen, whatsapp, pixKey: pixKey || "" };
+  const dataToUpdate: any = { title, bio, address, isOpen, whatsapp, pixKey: pixKey || "" };
+  if (schedule) dataToUpdate.schedule = schedule;
+  
   await updateDoc(doc(db, "pages", pageSlug), dataToUpdate);
 };
+
 export const incrementLinkClick = async (pageSlug: string, itemId: string): Promise<void> => {
   try {
     const pageDocRef = doc(db, "pages", pageSlug);
@@ -330,12 +334,14 @@ export const incrementLinkClick = async (pageSlug: string, itemId: string): Prom
     }
   } catch (error) { console.error(error); }
 };
+
 export const findUserByEmail = async (email: string): Promise<(UserData & { uid: string }) | null> => {
   if (!email) return null;
   const q = query(collection(db, "users"), where("email", "==", email.trim()));
   const snapshot = await getDocs(q);
   return snapshot.empty ? null : { uid: snapshot.docs[0].id, ...(snapshot.docs[0].data() as UserData) };
 };
+
 export const updateUserPlan = async (userId: string, newPlan: 'free' | 'pro'): Promise<void> => {
   await updateDoc(doc(db, "users", userId), { plan: newPlan, trialDeadline: null });
   const pagesRef = collection(db, "pages");
@@ -346,6 +352,7 @@ export const updateUserPlan = async (userId: string, newPlan: 'free' | 'pro'): P
       await updateDoc(doc(db, "pages", pageId), { plan: newPlan, trialDeadline: null });
   }
 };
+
 export const updateUserFiscalData = async (userId: string, cpfCnpj: string, phone: string): Promise<void> => {
   const userRef = doc(db, "users", userId);
   await updateDoc(userRef, { cpfCnpj, phone });
