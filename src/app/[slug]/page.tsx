@@ -111,7 +111,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
     fetchData();
   }, [resolvedParams.slug]);
 
-  // Carregar Horários
+  // 2. Carregar Horários (CORRIGIDO)
   useEffect(() => {
     if (!pageData || totalDuration === 0 || !isSelectorOpen) return;
 
@@ -119,11 +119,28 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         setLoadingSlots(true);
         setAvailableSlots([]);
 
-        const startOfDay = new Date(selectedDate + 'T00:00:00');
-        const endOfDay = new Date(selectedDate + 'T23:59:59');
+        // --- CORREÇÃO DE DATA NA BUSCA ---
+        // Força o horário local (00:00:00) para evitar buscar o dia anterior (UTC)
+        const dateStr = `${selectedDate}T00:00:00`; 
+        
+        const startOfDay = new Date(dateStr);
+        const endOfDay = new Date(dateStr);
+        endOfDay.setHours(23, 59, 59, 999); // Final do dia exato
 
+        console.log("🔍 Buscando agenda para:", startOfDay.toLocaleString());
+
+        // Busca o que já está ocupado no banco
         const busyAppointments = await getAppointmentsByDate(resolvedParams.slug, startOfDay, endOfDay);
-        const slots = generateAvailableSlots(startOfDay, totalDuration, busyAppointments);
+        
+        console.log("❌ Ocupados encontrados:", busyAppointments.length);
+
+        // Calcula os buracos livres
+        const slots = generateAvailableSlots(
+            startOfDay, 
+            totalDuration, 
+            busyAppointments,
+            pageData.schedule // AGORA PASSAMOS A CONFIG DO DONO
+        );
 
         setAvailableSlots(slots);
         setLoadingSlots(false);
