@@ -13,7 +13,7 @@ import {
 } from '@/lib/pageService';
 import { 
   FaUserCog, FaImage, FaSave, FaQrcode, FaTag, FaTrashAlt,
-  FaUtensils, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaExclamationCircle
+  FaUtensils, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf
 } from 'react-icons/fa';
 import Image from 'next/image';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -49,7 +49,6 @@ export default function DashboardPage() {
   // Agenda State
   const [appointments, setAppointments] = useState<AppointmentData[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
-  const [indexError, setIndexError] = useState(false); // Novo: Captura erro de índice
 
   // Modais
   const [isFiscalModalOpen, setIsFiscalModalOpen] = useState(false);
@@ -102,6 +101,25 @@ export default function DashboardPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+ 
+  // --- FINANCIAL STATS CALCULATION ---
+  const financialStats = React.useMemo(() => {
+      const upcomingApps = appointments;
+
+      return {
+          count: upcomingApps.length,
+          // Soma tudo que está pendente (Hoje + Amanhã + Depois...)
+          pending: upcomingApps.filter(a => a.status === 'pending').reduce((acc, curr) => acc + (curr.totalValue || 0), 0),
+          // Soma tudo que está confirmado
+          confirmed: upcomingApps.filter(a => a.status === 'confirmed').reduce((acc, curr) => acc + (curr.totalValue || 0), 0),
+          // Realizado (Geralmente é hoje, pois passado some da lista, mas mantém a lógica)
+          completed: upcomingApps.filter(a => a.status === 'completed').reduce((acc, curr) => acc + (curr.totalValue || 0), 0),
+          // Total Projetado (Soma geral da lista)
+          projected: upcomingApps.filter(a => a.status !== 'cancelled').reduce((acc, curr) => acc + (curr.totalValue || 0), 0),
+      };
+  }, [appointments]);
+
+
   // --- DATA FETCHING ---
 
   const fetchPageData = useCallback(async () => {
@@ -140,7 +158,6 @@ export default function DashboardPage() {
   const fetchAppointments = useCallback(async () => {
       if (!pageSlug) return;
       setIsLoadingAppointments(true);
-      setIndexError(false); // Reseta erro
       try {
         const data = await getUpcomingAppointments(pageSlug);
         setAppointments(data);
@@ -197,7 +214,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Simplified handlers for Service/Profile (Logica igual a anterior)
   const handleAddItem = async (e: FormEvent) => {
     e.preventDefault();
     if (!pageSlug || !newItemTitle) return;
@@ -308,84 +324,110 @@ export default function DashboardPage() {
 
         {/* === ABA: AGENDA === */}
         {activeTab === 'agenda' && (
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[400px]">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-bold text-gray-800 text-lg">Próximos Agendamentos</h3>
-                    <button onClick={fetchAppointments} className="text-sm text-blue-600 hover:underline">Atualizar</button>
-                </div>
+            <div className="space-y-6">
                 
-                {/* AVISO IMPORTANTE SE TIVER VAZIO */}
-                {isLoadingAppointments ? <div className="text-center py-10">Carregando agenda...</div> : (
-                    <div className="space-y-4">
-                        {appointments.length === 0 ? (
-                            <div className="text-center py-10 text-gray-400">
-                                <FaCalendarAlt size={40} className="mx-auto mb-2 opacity-20"/>
-                                <p>Nenhum agendamento futuro encontrado.</p>
-                                <p className="text-xs mt-2 text-gray-400 max-w-xs mx-auto">Se você criou um agendamento e ele não apareceu aqui, verifique o Console (F12) por erros de Índice do Firebase.</p>
-                            </div>
-                        ) : (
-                            appointments.map(app => {
-                                // --- SEGURANÇA CONTRA CRASH ---
-                                // Converte data de forma segura
-                                let start: Date;
-                                try {
-                                    start = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any);
-                                    if(isNaN(start.getTime())) throw new Error("Data Inválida");
-                                } catch (e) { start = new Date(); } // Fallback para agora se der erro
+                {/* CARDS FINANCEIROS (NOVO) */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                         <div className="flex items-center gap-2 text-gray-400 text-xs font-bold uppercase mb-1"><FaChartLine/> Hoje (Projetado)</div>
+                         <div className="text-2xl font-bold text-gray-800">R$ {financialStats.projected.toFixed(2)}</div>
+                         <div className="text-xs text-gray-400">{financialStats.count} agendamentos</div>
+                    </div>
+                    
+                    <div className="bg-white p-4 rounded-xl border-l-4 border-yellow-400 shadow-sm">
+                         <div className="flex items-center gap-2 text-yellow-600 text-xs font-bold uppercase mb-1"><FaHourglassHalf/> A Receber</div>
+                         <div className="text-2xl font-bold text-gray-800">R$ {financialStats.pending.toFixed(2)}</div>
+                         <div className="text-xs text-gray-400">Pendente</div>
+                    </div>
 
-                                const isToday = new Date().toDateString() === start.toDateString();
-                                const statusColors = { pending: 'bg-yellow-100 text-yellow-800 border-yellow-200', confirmed: 'bg-blue-50 text-blue-800 border-blue-200', cancelled: 'bg-red-100 text-red-800', completed: 'bg-green-100 text-green-800' };
-                                const statusLabels = { pending: 'Aguardando Pagamento', confirmed: 'Confirmado', cancelled: 'Cancelado', completed: 'Concluído' };
-                                
-                                // Valores seguros
-                                const val = typeof app.totalValue === 'number' ? app.totalValue : 0;
-                                const status = app.status || 'pending';
+                    <div className="bg-white p-4 rounded-xl border-l-4 border-blue-500 shadow-sm">
+                         <div className="flex items-center gap-2 text-blue-600 text-xs font-bold uppercase mb-1"><FaWallet/> Confirmado</div>
+                         <div className="text-2xl font-bold text-gray-800">R$ {financialStats.confirmed.toFixed(2)}</div>
+                         <div className="text-xs text-gray-400">Na Agenda</div>
+                    </div>
 
-                                return (
-                                    <div key={app.id || Math.random()} className={`border p-4 rounded-xl flex flex-col gap-4 ${statusColors[status] || 'bg-gray-100'} ${isToday ? 'ring-2 ring-orange-500 ring-offset-2' : ''}`}>
-                                        <div className="flex justify-between items-start">
-                                            <div className="w-full">
-                                                <div className="flex justify-between w-full mb-1">
-                                                    <div className="flex gap-2 items-center">
-                                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-white/50 border border-black/5`}>{statusLabels[status] || status}</span>
-                                                        {isToday && <span className="text-[10px] bg-orange-500 text-white font-bold px-2 py-0.5 rounded shadow">HOJE</span>}
+                    <div className="bg-white p-4 rounded-xl border-l-4 border-green-500 shadow-sm">
+                         <div className="flex items-center gap-2 text-green-600 text-xs font-bold uppercase mb-1"><FaMoneyBillWave/> Realizado</div>
+                         <div className="text-2xl font-bold text-gray-800">R$ {financialStats.completed.toFixed(2)}</div>
+                         <div className="text-xs text-gray-400">No Bolso</div>
+                    </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[400px]">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-bold text-gray-800 text-lg">Próximos Agendamentos</h3>
+                        <button onClick={fetchAppointments} className="text-sm text-blue-600 hover:underline">Atualizar</button>
+                    </div>
+                    
+                    {isLoadingAppointments ? <div className="text-center py-10">Carregando agenda...</div> : (
+                        <div className="space-y-4">
+                            {appointments.length === 0 ? (
+                                <div className="text-center py-10 text-gray-400">
+                                    <FaCalendarAlt size={40} className="mx-auto mb-2 opacity-20"/>
+                                    <p>Nenhum agendamento futuro encontrado.</p>
+                                    <p className="text-xs mt-2 text-gray-400 max-w-xs mx-auto">A agenda mostra compromissos de hoje em diante.</p>
+                                </div>
+                            ) : (
+                                appointments.map(app => {
+                                    let start: Date;
+                                    try {
+                                        start = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any);
+                                        if(isNaN(start.getTime())) throw new Error("Data Inválida");
+                                    } catch (e) { start = new Date(); } 
+
+                                    const isToday = new Date().toDateString() === start.toDateString();
+                                    const statusColors = { pending: 'bg-yellow-50 text-yellow-800 border-yellow-200', confirmed: 'bg-blue-50 text-blue-800 border-blue-200', cancelled: 'bg-red-50 text-red-800 border-red-200 opacity-70', completed: 'bg-green-50 text-green-800 border-green-200' };
+                                    const statusLabels = { pending: 'Aguardando Pagamento', confirmed: 'Confirmado', cancelled: 'Cancelado', completed: 'Concluído' };
+                                    
+                                    const val = typeof app.totalValue === 'number' ? app.totalValue : 0;
+                                    const status = app.status || 'pending';
+
+                                    return (
+                                        <div key={app.id || Math.random()} className={`border p-4 rounded-xl flex flex-col gap-4 ${statusColors[status] || 'bg-gray-100'} ${isToday && status !== 'cancelled' ? 'ring-2 ring-orange-500 ring-offset-2' : ''}`}>
+                                            <div className="flex justify-between items-start">
+                                                <div className="w-full">
+                                                    <div className="flex justify-between w-full mb-1">
+                                                        <div className="flex gap-2 items-center">
+                                                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-white/50 border border-black/5`}>{statusLabels[status] || status}</span>
+                                                            {isToday && <span className="text-[10px] bg-orange-500 text-white font-bold px-2 py-0.5 rounded shadow">HOJE</span>}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                
-                                                <div className="flex items-center gap-3 mt-2">
-                                                    {app.customerPhoto && <img src={app.customerPhoto} alt="user" className="w-10 h-10 rounded-full border-2 border-white shadow-sm"/>}
-                                                    <div>
-                                                        <h4 className="font-bold text-gray-900 text-lg leading-tight">{start.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})} - {app.customerName || 'Cliente'}</h4>
-                                                        <p className="text-sm font-medium opacity-80">{app.serviceName || 'Serviço'}</p>
+                                                    
+                                                    <div className="flex items-center gap-3 mt-2">
+                                                        {app.customerPhoto && <img src={app.customerPhoto} alt="user" className="w-10 h-10 rounded-full border-2 border-white shadow-sm"/>}
+                                                        <div>
+                                                            <h4 className="font-bold text-gray-900 text-lg leading-tight">{start.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})} - {app.customerName || 'Cliente'}</h4>
+                                                            <p className="text-sm font-medium opacity-80">{app.serviceName || 'Serviço'}</p>
+                                                        </div>
                                                     </div>
-                                                </div>
 
-                                                <div className="mt-2 text-xs opacity-70 flex gap-2 items-center">
-                                                    <span>{start.toLocaleDateString('pt-BR')}</span> • 
-                                                    <span>{app.customerPhone}</span> • 
-                                                    <span className="font-bold text-sm">R$ {val.toFixed(2)}</span>
+                                                    <div className="mt-2 text-xs opacity-70 flex gap-2 items-center">
+                                                        <span>{start.toLocaleDateString('pt-BR')}</span> • 
+                                                        <span>{app.customerPhone}</span> • 
+                                                        <span className="font-bold text-sm">R$ {val.toFixed(2)}</span>
+                                                    </div>
                                                 </div>
                                             </div>
+                                            
+                                            {/* AÇÕES */}
+                                            <div className="flex flex-wrap gap-2 border-t border-black/5 pt-3 mt-1">
+                                                {status === 'pending' && (
+                                                    <button onClick={() => handleStatusChange(app.id!, 'confirmed')} className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition"><FaMoneyBillWave/> Confirmar Pagamento</button>
+                                                )}
+                                                {status === 'confirmed' && (
+                                                    <button onClick={() => handleStatusChange(app.id!, 'completed')} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition"><FaCheck/> Concluir Serviço</button>
+                                                )}
+                                                {status !== 'cancelled' && status !== 'completed' && (
+                                                    <button onClick={() => handleStatusChange(app.id!, 'cancelled')} className="bg-white border border-red-200 text-red-500 hover:bg-red-50 px-4 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-1 transition"><FaTimes/></button>
+                                                )}
+                                            </div>
                                         </div>
-                                        
-                                        {/* AÇÕES */}
-                                        <div className="flex flex-wrap gap-2 border-t border-black/5 pt-3 mt-1">
-                                            {status === 'pending' && (
-                                                <button onClick={() => handleStatusChange(app.id!, 'confirmed')} className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition"><FaMoneyBillWave/> Confirmar Pagamento</button>
-                                            )}
-                                            {status === 'confirmed' && (
-                                                <button onClick={() => handleStatusChange(app.id!, 'completed')} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition"><FaCheck/> Concluir Serviço</button>
-                                            )}
-                                            {status !== 'cancelled' && status !== 'completed' && (
-                                                <button onClick={() => handleStatusChange(app.id!, 'cancelled')} className="bg-white border border-red-200 text-red-500 hover:bg-red-50 px-4 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-1 transition"><FaTimes/></button>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
-                    </div>
-                )}
+                                    );
+                                })
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
         )}
 
