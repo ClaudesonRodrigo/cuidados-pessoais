@@ -16,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cardapio Digital -Aracaju",
+  title: "Agenda Digital -Aracaju",
   metadataBase: new URL('https://www.cardapiocerto.com.br'),
-  description: "Crie seu Cardapio personalizado e compartilhe com seus Clientes.",
+  description: "Crie sua Barbearia personalizado e compartilhe com seus Clientes.",
   manifest: "/manifest.json",
   icons: {
     icon: '/icon-192x192.png',
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Cardapio Digital Pro",
+    title: "Agenda Digital - Aracaju",
   },
 };
 

@@ -25,10 +25,10 @@ interface ExtendedPageData extends PageData {
   isOpen?: boolean;
   whatsapp?: string;
   pixKey?: string;
-  schedule?: ScheduleData;
+  schedule?: ScheduleData; // GARANTIDO QUE EXISTE
 }
 
-// --- SKELETON (Carregamento) ---
+// --- SKELETON (Carregamento Bonito) ---
 function MenuSkeleton() {
   return (
     <div className="min-h-screen bg-gray-950 px-4 py-10 animate-pulse">
@@ -58,6 +58,8 @@ function NotFoundState() {
 const getNextDays = (days: number) => {
     const dates = [];
     const today = new Date();
+    // Ajuste para garantir que "Hoje" comece no dia certo localmente
+    // (Pode ajustar se quiser pular o dia atual se já passou do horário)
     for (let i = 0; i < days; i++) {
         const d = new Date(today);
         d.setDate(today.getDate() + i);
@@ -83,7 +85,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [isSelectorOpen, setIsSelectorOpen] = useState(false); 
   
   // DATA SELECTION (Novo Visual)
-  const nextDays = getNextDays(14); // Gera 14 dias
+  const nextDays = getNextDays(14); // Gera 14 dias para frente
   const [selectedDate, setSelectedDate] = useState<string>(nextDays[0].fullDate); 
   
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
@@ -154,7 +156,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
             startOfDay, 
             totalDuration, 
             busyAppointments,
-            pageData.schedule // Passando a config do dono
+            pageData.schedule // <--- AQUI ESTÁ O SEGREDO DO HORÁRIO PERSONALIZADO
         );
 
         setAvailableSlots(slots);

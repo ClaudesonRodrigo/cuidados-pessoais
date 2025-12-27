@@ -1,6 +1,6 @@
 {
-  "name": "Meus Links Pro",
-  "short_name": "LinksPro",
+  "name": "Agendamento Digital",
+  "short_name": "Agendamento",
   "description": "Gerenciador de Links e Serviços",
   "start_url": "/",
   "display": "standalone",
