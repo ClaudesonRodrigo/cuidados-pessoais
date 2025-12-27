@@ -25,10 +25,10 @@ interface ExtendedPageData extends PageData {
   isOpen?: boolean;
   whatsapp?: string;
   pixKey?: string;
-  schedule?: ScheduleData; // GARANTIDO QUE EXISTE
+  schedule?: ScheduleData; 
 }
 
-// --- SKELETON (Carregamento Bonito) ---
+// --- SKELETON (Carregamento) ---
 function MenuSkeleton() {
   return (
     <div className="min-h-screen bg-gray-950 px-4 py-10 animate-pulse">
@@ -58,8 +58,6 @@ function NotFoundState() {
 const getNextDays = (days: number) => {
     const dates = [];
     const today = new Date();
-    // Ajuste para garantir que "Hoje" comece no dia certo localmente
-    // (Pode ajustar se quiser pular o dia atual se já passou do horário)
     for (let i = 0; i < days; i++) {
         const d = new Date(today);
         d.setDate(today.getDate() + i);
@@ -84,8 +82,8 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [cart, setCart] = useState<LinkData[]>([]); 
   const [isSelectorOpen, setIsSelectorOpen] = useState(false); 
   
-  // DATA SELECTION (Novo Visual)
-  const nextDays = getNextDays(14); // Gera 14 dias para frente
+  // DATA SELECTION
+  const nextDays = getNextDays(14); // Gera 14 dias
   const [selectedDate, setSelectedDate] = useState<string>(nextDays[0].fullDate); 
   
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
@@ -122,7 +120,6 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         if (!data) setError(true); 
         else {
             setPageData(data);
-            // Lógica de Tema (CSS Global)
             const theme = data.theme || 'dark';
             document.documentElement.className = "";
             if (data.backgroundImage) document.documentElement.classList.add('theme-custom-image');
@@ -133,7 +130,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
     fetchData();
   }, [resolvedParams.slug]);
 
-  // Carregar Horários (Com correção de Fuso e Schedule)
+  // Carregar Horários (Com Proteção de Dias Fechados)
   useEffect(() => {
     if (!pageData || totalDuration === 0 || !isSelectorOpen) return;
 
@@ -141,22 +138,31 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         setLoadingSlots(true);
         setAvailableSlots([]);
 
-        // CORREÇÃO: Força 00:00 local
+        // Força 00:00 local para evitar bugs de fuso
         const dateStr = `${selectedDate}T00:00:00`; 
         
         const startOfDay = new Date(dateStr);
         const endOfDay = new Date(dateStr);
         endOfDay.setHours(23, 59, 59, 999); 
 
+        // --- TRAVA DE SEGURANÇA (FRONTEND) ---
+        // Se o dia não estiver marcado como 'aberto' no painel, nem vai no banco.
+        const dayOfWeek = startOfDay.getDay(); // 0 a 6
+        if (pageData.schedule?.workingDays && !pageData.schedule.workingDays.includes(dayOfWeek)) {
+             setAvailableSlots([]); // Retorna vazio (Fechado)
+             setLoadingSlots(false);
+             return;
+        }
+
         // Busca ocupados no Banco
         const busyAppointments = await getAppointmentsByDate(resolvedParams.slug, startOfDay, endOfDay);
 
-        // Calcula Livres (Passando o Schedule do Dono)
+        // Calcula Livres
         const slots = generateAvailableSlots(
             startOfDay, 
             totalDuration, 
             busyAppointments,
-            pageData.schedule // <--- AQUI ESTÁ O SEGREDO DO HORÁRIO PERSONALIZADO
+            pageData.schedule 
         );
 
         setAvailableSlots(slots);
@@ -211,7 +217,6 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
       try {
           const [hours, minutes] = selectedTime.split(':').map(Number);
           
-          // Correção de Fuso na Gravação
           const startDate = new Date(`${selectedDate}T00:00:00`);
           startDate.setHours(hours, minutes, 0, 0);
 
@@ -356,22 +361,41 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                         </div>
                     </div>
 
-                    {/* HORIZONTAL DATE PICKER (NOVO!) */}
+                    {/* HORIZONTAL DATE PICKER (COM BLOQUEIO DE DIAS) */}
                     <div>
                         <h2 className="text-gray-500 font-bold text-xs uppercase tracking-widest mb-4 flex items-center gap-2 px-1">
                             <FaCalendarAlt className="text-orange-500"/> Escolha a Data
                         </h2>
                         <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4 snap-x">
                             {nextDays.map((day) => {
+                                // Lógica de dia aberto/fechado
+                                const dayDate = new Date(`${day.fullDate}T00:00:00`);
+                                const dayOfWeek = dayDate.getDay();
+                                
+                                // Se não tiver a config, assume que abre todos os dias (segurança)
+                                const isOpenDay = pageData.schedule?.workingDays 
+                                    ? pageData.schedule.workingDays.includes(dayOfWeek)
+                                    : true;
+
                                 const isSelected = day.fullDate === selectedDate;
+                                
                                 return (
                                     <button 
                                         key={day.fullDate} 
+                                        disabled={!isOpenDay} // Desabilita clique
                                         onClick={() => setSelectedDate(day.fullDate)}
-                                        className={`shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center gap-1 transition-all border snap-center ${isSelected ? 'bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-900/50 scale-105' : 'bg-gray-900 border-gray-800 text-gray-400 hover:border-gray-600 hover:bg-gray-800'}`}
+                                        className={`flex-shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center gap-1 transition-all border snap-center ${
+                                            !isOpenDay 
+                                            ? 'bg-gray-900 border-gray-800 opacity-30 cursor-not-allowed grayscale' // Estilo Bloqueado
+                                            : isSelected 
+                                                ? 'bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-900/50 scale-105' 
+                                                : 'bg-gray-900 border-gray-800 text-gray-400 hover:border-gray-600 hover:bg-gray-800'
+                                        }`}
                                     >
                                         <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">{day.dayName}</span>
-                                        <span className="text-xl font-bold">{day.dayNumber}</span>
+                                        <span className="text-xl font-bold">
+                                            {!isOpenDay ? <FaTimes size={14} className="mx-auto mt-1"/> : day.dayNumber}
+                                        </span>
                                     </button>
                                 )
                             })}
@@ -496,7 +520,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                                 {/* PIX AREA */}
                                 {hasPix ? (
                                     <div className="bg-gray-800 p-4 rounded-xl text-center border border-dashed border-gray-600 relative overflow-hidden">
-                                        <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-blue-500 to-purple-500"></div>
+                                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
                                         <p className="text-white font-bold text-sm mb-4 flex justify-center items-center gap-2"><FaQrcode className="text-blue-400"/> Pagamento via Pix</p>
                                         <div className="bg-white p-3 rounded-lg inline-block mb-4 shadow-xl">
                                             <QRCodeCanvas value={pageData.pixKey!} size={130} />
