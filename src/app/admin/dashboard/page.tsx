@@ -12,7 +12,7 @@ import {
 } from '@/lib/pageService';
 import { 
   FaUserCog, FaImage, FaSave, FaQrcode, FaTag, FaTrashAlt,
-  FaUtensils, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff
+  FaUtensils, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff, FaStar, FaBolt
 } from 'react-icons/fa';
 import Image from 'next/image';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -103,6 +103,7 @@ export default function DashboardPage() {
   // Super Admin
   const isAdmin = userData?.role === 'admin';
   const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [adminSearch, setAdminSearch] = useState(''); // Busca no Admin
 
   // Helpers
   const isProPlan = (pageData?.plan === 'pro');
@@ -125,6 +126,26 @@ export default function DashboardPage() {
           projected: upcomingApps.filter(a => a.status !== 'cancelled').reduce((acc, curr) => acc + (curr.totalValue || 0), 0),
       };
   }, [appointments]);
+
+  // Estatísticas Admin
+  const adminStats = React.useMemo(() => {
+      if (!allUsers) return { total: 0, pro: 0, trial: 0 };
+      return {
+          total: allUsers.length,
+          pro: allUsers.filter(u => u.plan === 'pro').length,
+          trial: allUsers.filter(u => u.plan !== 'pro').length
+      };
+  }, [allUsers]);
+
+  // Filtro de Usuários (Admin)
+  const filteredUsers = React.useMemo(() => {
+      if (!adminSearch) return allUsers;
+      const lower = adminSearch.toLowerCase();
+      return allUsers.filter(u => 
+          (u.displayName && u.displayName.toLowerCase().includes(lower)) || 
+          (u.email && u.email.toLowerCase().includes(lower))
+      );
+  }, [allUsers, adminSearch]);
 
   // --- CARREGAMENTO DE DADOS ---
 
@@ -234,18 +255,20 @@ export default function DashboardPage() {
     } catch { return null; }
   };
 
+  // Helper de ID único
+  const getUniqueId = (link: LinkData, index: number) => {
+      const safeTitle = (link.title || 'untitled').replace(/[^a-zA-Z0-9]/g, '');
+      return `item-${safeTitle}-${index}`;
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id && pageData?.links) {
       setPageData((prev) => {
         if (!prev) return null;
-        // Precisamos encontrar os índices baseados no ID que a biblioteca está usando
-        // O SortableLinkItem usa: (link.url || link.title) + index
-        const currentIds = prev.links.map((l, i) => (l.url || l.title) + i);
-        
+        const currentIds = prev.links.map((l, i) => getUniqueId(l, i));
         const oldIndex = currentIds.indexOf(String(active.id));
         const newIndex = currentIds.indexOf(String(over.id));
-        
         if (oldIndex !== -1 && newIndex !== -1) {
             const newLinks = arrayMove(prev.links, oldIndex, newIndex);
             const reordered = newLinks.map((l, i) => ({ ...l, order: i + 1 }));
@@ -262,8 +285,6 @@ export default function DashboardPage() {
     if (!pageSlug || !newItemTitle) return;
     const current = pageData?.links || [];
     if (!isProPlan && current.length >= 8) return alert("Limite Free (8 serviços). Vire Pro!");
-    
-    // Validação de duplicidade simples
     const exists = current.some(l => l.title === newItemTitle);
     if(exists) { alert("Já existe um serviço com esse nome."); return; }
 
@@ -301,7 +322,6 @@ export default function DashboardPage() {
     setEditingIndex(null); fetchPageData();
   };
 
-  // --- FUNÇÃO PARA ALTERNAR DIAS ---
   const toggleDay = (dayIndex: number) => {
     setSchedDays(prev => 
         prev.includes(dayIndex) 
@@ -313,25 +333,8 @@ export default function DashboardPage() {
   const handleSaveProfile = async () => {
       if(!pageSlug) return;
       const whatsappToSave = editingProfileWhatsapp ? `55${editingProfileWhatsapp.replace(/\D/g, '')}` : '';
-      
-      const schedule = {
-          open: schedOpen,
-          close: schedClose,
-          lunchStart: schedLunchStart,
-          lunchEnd: schedLunchEnd,
-          workingDays: schedDays // SALVANDO OS DIAS
-      };
-
-      await updatePageProfileInfo(
-          pageSlug, 
-          editingProfileTitle, 
-          editingProfileBio, 
-          isProPlan ? editingProfileAddress : '', 
-          isOpenStore, 
-          whatsappToSave, 
-          isProPlan ? editingProfilePix : '',
-          schedule 
-      );
+      const schedule = { open: schedOpen, close: schedClose, lunchStart: schedLunchStart, lunchEnd: schedLunchEnd, workingDays: schedDays };
+      await updatePageProfileInfo(pageSlug, editingProfileTitle, editingProfileBio, isProPlan ? editingProfileAddress : '', isOpenStore, whatsappToSave, isProPlan ? editingProfilePix : '', schedule);
       alert("Dados salvos com sucesso!");
       fetchPageData();
   };
@@ -379,14 +382,14 @@ export default function DashboardPage() {
 
       <main className="max-w-4xl mx-auto py-6 px-4 space-y-6">
         
-        {/* NAVEGAÇÃO DE ABAS */}
+        {/* ABAS */}
         <div className="flex bg-gray-200 p-1 rounded-xl">
             <button onClick={() => setActiveTab('agenda')} className={`flex-1 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'agenda' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaCalendarAlt/> Agenda</button>
             <button onClick={() => setActiveTab('services')} className={`flex-1 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'services' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaList/> Serviços</button>
             <button onClick={() => setActiveTab('profile')} className={`flex-1 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'profile' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaUserCog/> Perfil</button>
         </div>
 
-        {/* --- ABA AGENDA --- */}
+        {/* AGENDA */}
         {activeTab === 'agenda' && (
             <div className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -413,16 +416,15 @@ export default function DashboardPage() {
             </div>
         )}
 
-        {/* --- ABA SERVIÇOS --- */}
+        {/* SERVIÇOS */}
         {activeTab === 'services' && (
              <div className="space-y-6">
-                 {/* Novo Serviço */}
                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                      <h3 className="font-bold text-gray-800 mb-4 flex gap-2 items-center"><FaPlus className="text-green-500"/> Novo Serviço</h3>
                      <form onSubmit={handleAddItem} className="space-y-4">
                          <div className="flex flex-col sm:flex-row gap-4 items-start">
                              <div className="w-20 h-20 bg-gray-50 rounded border-2 border-dashed flex items-center justify-center relative cursor-pointer">
-                                 {newItemImage ? <Image src={newItemImage} alt="Serviço" fill className="object-cover rounded"/> : <FaCamera className="text-gray-400"/>}
+                                 {newItemImage ? <Image src={newItemImage} alt="Serviço" fill className="object-cover rounded" sizes="80px"/> : <FaCamera className="text-gray-400"/>}
                                  <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleItemImageUpload(e, true)} />
                                  {isUploadingItemImg && <div className="absolute inset-0 bg-white/80 flex items-center justify-center text-xs">...</div>}
                              </div>
@@ -441,19 +443,13 @@ export default function DashboardPage() {
                          <button type="submit" className="w-full bg-green-600 text-white font-bold py-2 rounded">Adicionar</button>
                      </form>
                  </div>
-                 
-                 {/* Lista DnD */}
                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                     <SortableContext 
-                        items={pageData?.links?.map((l, i) => (l.url || l.title) + i) || []} 
-                        strategy={verticalListSortingStrategy}
-                     >
+                     <SortableContext items={pageData?.links?.map((l, i) => getUniqueId(l, i)) || []} strategy={verticalListSortingStrategy}>
                          <div className="space-y-3">
                              {pageData?.links?.map((link, index) => {
-                                 const linkId = (link.url || link.title) + index;
-                                 
+                                 const uniqueId = getUniqueId(link, index);
                                  if(editingIndex === index) return (
-                                     <div key={linkId} className="bg-orange-50 p-4 rounded border border-orange-200 space-y-2">
+                                     <div key={uniqueId} className="bg-orange-50 p-4 rounded border border-orange-200 space-y-2">
                                          <p className="text-xs font-bold text-orange-800">Editando: {link.title}</p>
                                          <div className="flex gap-2">
                                              <input className="flex-1 border p-1 rounded text-sm" value={editItemTitle} onChange={e=>setEditItemTitle(e.target.value)} placeholder="Nome"/>
@@ -466,13 +462,11 @@ export default function DashboardPage() {
                                          </div>
                                      </div>
                                  );
-                                 return <SortableLinkItem key={linkId} link={link} index={index} onEdit={()=>{setEditingIndex(index); setEditItemTitle(link.title); setEditItemPrice(link.price||''); setEditItemDuration(String(link.durationMinutes||30)); setEditItemCat(link.category||''); setEditItemImage(link.imageUrl||'');}} onDelete={async()=>{if(confirm("Excluir?")){await deleteLinkFromPage(pageSlug!, link); fetchPageData();}}} editingIndex={editingIndex} />
+                                 return <SortableLinkItem key={uniqueId} id={uniqueId} link={link} index={index} onEdit={()=>{setEditingIndex(index); setEditItemTitle(link.title); setEditItemPrice(link.price||''); setEditItemDuration(String(link.durationMinutes||30)); setEditItemCat(link.category||''); setEditItemImage(link.imageUrl||'');}} onDelete={async()=>{if(confirm("Excluir?")){await deleteLinkFromPage(pageSlug!, link); fetchPageData();}}} editingIndex={editingIndex} />
                              })}
                          </div>
                      </SortableContext>
                  </DndContext>
- 
-                 {/* Cupons */}
                  <div className={`bg-white p-6 rounded-xl border border-gray-100 ${!isProPlan?'opacity-60 grayscale pointer-events-none':''}`}>
                      <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><FaTag className="text-purple-500"/> Cupons {!isProPlan && <FaLock className="text-gray-400 size-3"/>}</h3>
                      <div className="flex gap-2 mb-4">
@@ -489,118 +483,177 @@ export default function DashboardPage() {
              </div>
         )}
 
-        {/* === ABA: PERFIL === */}
+        {/* PERFIL */}
         {activeTab === 'profile' && (
              <div className="space-y-6">
                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6 items-start">
                      <div className="relative w-24 h-24 shrink-0 mx-auto md:mx-0">
                          <div className="w-full h-full rounded-full overflow-hidden border-4 border-gray-100 relative bg-gray-200">
-                              {pageData?.profileImageUrl ? <Image src={pageData.profileImageUrl} alt="Logo" fill className="object-cover"/> : <FaCamera className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400"/>}
+                              {pageData?.profileImageUrl ? <Image src={pageData.profileImageUrl} alt="Logo" fill className="object-cover" sizes="96px"/> : <FaCamera className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400"/>}
                          </div>
                          <label className="absolute bottom-0 right-0 bg-orange-500 text-white p-2 rounded-full cursor-pointer"><FaCamera size={12}/><input type="file" className="hidden" onChange={handleProfileUpload}/></label>
                      </div>
                      <div className="flex-1 w-full space-y-3">
                          <input value={editingProfileTitle} onChange={e=>setEditingProfileTitle(e.target.value)} className="w-full text-lg font-bold border-b outline-none" placeholder="Nome da Barbearia"/>
                          <textarea value={editingProfileBio} onChange={e=>setEditingProfileBio(e.target.value)} className="w-full text-sm border rounded p-2 outline-none" rows={2} placeholder="Bio"/>
-                         
                          <div className="flex items-center border rounded px-3 py-2 bg-gray-50"><FaWhatsapp className="text-green-500 mr-2"/> +55 <input value={editingProfileWhatsapp} onChange={e=>setEditingProfileWhatsapp(e.target.value)} className="bg-transparent outline-none ml-2 w-full" placeholder="Seu Zap"/></div>
-                         
-                         <div className={`flex items-center gap-2 border rounded p-2 ${isProPlan ? 'bg-gray-50 focus-within:border-blue-500 focus-within:bg-white' : 'bg-gray-100 opacity-60 cursor-not-allowed'}`}>
-                             <FaMapMarkerAlt className="text-gray-400" />
-                             <input type="text" value={editingProfileAddress} onChange={e => setEditingProfileAddress(e.target.value)} className={`w-full text-sm bg-transparent outline-none ${!isProPlan ? 'cursor-not-allowed' : ''}`} placeholder={isProPlan ? "Endereço Completo" : "Endereço (Recurso Pro)"} disabled={!isProPlan} />
-                             {!isProPlan && <FaLock className="text-gray-400" />}
-                         </div>
-
-                         <div className={`flex items-center gap-2 border rounded p-2 ${isProPlan ? 'bg-gray-50 focus-within:border-blue-500 focus-within:bg-white' : 'bg-gray-100 opacity-60 cursor-not-allowed'}`}>
-                             <FaKey className="text-blue-500" />
-                             <input type="text" value={editingProfilePix} onChange={e => setEditingProfilePix(e.target.value)} className={`w-full text-sm bg-transparent outline-none ${!isProPlan ? 'cursor-not-allowed' : ''}`} placeholder={isProPlan ? "Chave Pix (CPF, Email, Telefone)" : "Chave Pix (Recurso Pro)"} disabled={!isProPlan}/>
-                             {!isProPlan && <FaLock className="text-gray-400" />}
-                         </div>
-                         
-                         {/* --- CONFIGURAÇÃO DE HORÁRIOS & DIAS (NOVO) --- */}
+                         <div className={`flex items-center gap-2 border rounded p-2 ${isProPlan ? 'bg-gray-50 focus-within:border-blue-500 focus-within:bg-white' : 'bg-gray-100 opacity-60 cursor-not-allowed'}`}><FaMapMarkerAlt className="text-gray-400" /><input type="text" value={editingProfileAddress} onChange={e => setEditingProfileAddress(e.target.value)} className={`w-full text-sm bg-transparent outline-none ${!isProPlan ? 'cursor-not-allowed' : ''}`} placeholder={isProPlan ? "Endereço Completo" : "Endereço (Recurso Pro)"} disabled={!isProPlan} />{!isProPlan && <FaLock className="text-gray-400" />}</div>
+                         <div className={`flex items-center gap-2 border rounded p-2 ${isProPlan ? 'bg-gray-50 focus-within:border-blue-500 focus-within:bg-white' : 'bg-gray-100 opacity-60 cursor-not-allowed'}`}><FaKey className="text-blue-500" /><input type="text" value={editingProfilePix} onChange={e => setEditingProfilePix(e.target.value)} className={`w-full text-sm bg-transparent outline-none ${!isProPlan ? 'cursor-not-allowed' : ''}`} placeholder={isProPlan ? "Chave Pix (CPF, Email, Telefone)" : "Chave Pix (Recurso Pro)"} disabled={!isProPlan}/>{!isProPlan && <FaLock className="text-gray-400" />}</div>
                          <div className="border-t pt-4 mt-2">
                              <h4 className="font-bold text-sm text-gray-700 mb-3 flex items-center gap-2"><FaClock className="text-orange-500"/> Horário de Funcionamento</h4>
-                             
-                             {/* Dias da Semana */}
-                             <div className="mb-4">
-                                <label className="text-xs font-bold text-gray-500 block mb-2">Dias de Funcionamento</label>
-                                <div className="flex gap-2 flex-wrap">
-                                    {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, index) => (
-                                        <button 
-                                            key={day}
-                                            onClick={() => toggleDay(index)}
-                                            className={`px-3 py-2 rounded-lg text-xs font-bold border transition ${
-                                                schedDays.includes(index) 
-                                                ? 'bg-green-600 text-white border-green-600 shadow-md' 
-                                                : 'bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200'
-                                            }`}
-                                        >
-                                            {day}
-                                        </button>
-                                    ))}
-                                </div>
-                             </div>
-
-                             <div className="grid grid-cols-2 gap-4">
-                                 <div>
-                                     <label className="text-xs font-bold text-gray-500 block mb-1">Abre às</label>
-                                     <input type="time" value={schedOpen} onChange={e => setSchedOpen(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/>
-                                 </div>
-                                 <div>
-                                     <label className="text-xs font-bold text-gray-500 block mb-1">Fecha às</label>
-                                     <input type="time" value={schedClose} onChange={e => setSchedClose(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/>
-                                 </div>
-                                 <div>
-                                     <label className="text-xs font-bold text-gray-500 block mb-1">Início Almoço</label>
-                                     <input type="time" value={schedLunchStart} onChange={e => setSchedLunchStart(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/>
-                                 </div>
-                                 <div>
-                                     <label className="text-xs font-bold text-gray-500 block mb-1">Fim Almoço</label>
-                                     <input type="time" value={schedLunchEnd} onChange={e => setSchedLunchEnd(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/>
-                                 </div>
-                             </div>
+                             <div className="mb-4"><label className="text-xs font-bold text-gray-500 block mb-2">Dias de Funcionamento</label><div className="flex gap-2 flex-wrap">{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, index) => (<button key={day} onClick={() => toggleDay(index)} className={`px-3 py-2 rounded-lg text-xs font-bold border transition ${schedDays.includes(index) ? 'bg-green-600 text-white border-green-600 shadow-md' : 'bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200'}`}>{day}</button>))}</div></div>
+                             <div className="grid grid-cols-2 gap-4"><div><label className="text-xs font-bold text-gray-500 block mb-1">Abre às</label><input type="time" value={schedOpen} onChange={e => setSchedOpen(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/></div><div><label className="text-xs font-bold text-gray-500 block mb-1">Fecha às</label><input type="time" value={schedClose} onChange={e => setSchedClose(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/></div><div><label className="text-xs font-bold text-gray-500 block mb-1">Início Almoço</label><input type="time" value={schedLunchStart} onChange={e => setSchedLunchStart(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/></div><div><label className="text-xs font-bold text-gray-500 block mb-1">Fim Almoço</label><input type="time" value={schedLunchEnd} onChange={e => setSchedLunchEnd(e.target.value)} className="w-full border p-2 rounded text-sm bg-gray-50"/></div></div>
                          </div>
- 
                          <button onClick={() => setIsOpenStore(!isOpenStore)} className={`w-full py-2 rounded font-bold flex justify-center items-center gap-2 ${isOpenStore?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{isOpenStore?<><FaDoorOpen/> Aberto</>:<><FaDoorClosed/> Fechado</>}</button>
                          <button onClick={handleSaveProfile} className="bg-orange-600 text-white px-4 py-2 rounded font-bold w-full"><FaSave/> Salvar Dados</button>
                      </div>
                  </div>
-                 
                  <div className="bg-white p-6 rounded-xl border border-gray-100">
                      <h3 className="font-bold text-gray-800 mb-4">Aparência</h3>
-                     <div className="flex gap-4 mb-4">
-                         <label className={`cursor-pointer px-4 py-2 rounded bg-gray-100 text-sm font-bold border hover:bg-gray-200 ${!isProPlan && 'opacity-50 pointer-events-none'}`}>
-                             Alterar Capa (Pro) <input type="file" className="hidden" onChange={handleBgUpload} disabled={!isProPlan}/>
-                         </label>
-                     </div>
-                     <div className="grid grid-cols-4 gap-2">
-                         {themes.map(t => (
-                             <button key={t.name} onClick={()=>{if(!t.isPro || isProPlan) updatePageTheme(pageSlug!, t.name)}} className={`h-10 rounded ${t.colorClass} ${pageData?.theme===t.name?'ring-2 ring-orange-500':''} relative`}>
-                                 {t.isPro && !isProPlan && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><FaLock className="text-white"/></div>}
-                             </button>
-                         ))}
-                     </div>
+                     <div className="flex gap-4 mb-4"><label className={`cursor-pointer px-4 py-2 rounded bg-gray-100 text-sm font-bold border hover:bg-gray-200 ${!isProPlan && 'opacity-50 pointer-events-none'}`}>Alterar Capa (Pro) <input type="file" className="hidden" onChange={handleBgUpload} disabled={!isProPlan}/></label></div>
+                     <div className="grid grid-cols-4 gap-2">{themes.map(t => (<button key={t.name} onClick={()=>{if(!t.isPro || isProPlan) updatePageTheme(pageSlug!, t.name)}} className={`h-10 rounded ${t.colorClass} ${pageData?.theme===t.name?'ring-2 ring-orange-500':''} relative`}>{t.isPro && !isProPlan && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><FaLock className="text-white"/></div>}</button>))}</div>
                  </div>
-                 
                   <div className="bg-white p-6 rounded-xl border border-gray-100 text-center">
                      <h3 className="font-bold text-gray-800 mb-4">Divulgação</h3>
-                     <div className="flex justify-center gap-2">
-                         <button onClick={()=>{navigator.clipboard.writeText(`${window.location.origin}/${pageSlug}`); setCopyButtonText("Copiado!"); setTimeout(()=>setCopyButtonText("Copiar Link"),2000)}} className="bg-orange-600 text-white px-4 py-2 rounded font-bold flex items-center gap-2"><FaCopy/> {copyButtonText}</button>
-                         <button onClick={()=>setShowQRCode(!showQRCode)} className="bg-gray-800 text-white px-4 py-2 rounded font-bold"><FaQrcode/></button>
-                     </div>
+                     <div className="flex justify-center gap-2"><button onClick={()=>{navigator.clipboard.writeText(`${window.location.origin}/${pageSlug}`); setCopyButtonText("Copiado!"); setTimeout(()=>setCopyButtonText("Copiar Link"),2000)}} className="bg-orange-600 text-white px-4 py-2 rounded font-bold flex items-center gap-2"><FaCopy/> {copyButtonText}</button><button onClick={()=>setShowQRCode(!showQRCode)} className="bg-gray-800 text-white px-4 py-2 rounded font-bold"><FaQrcode/></button></div>
                      {showQRCode && isProPlan && <div className="mt-4 flex justify-center"><QRCodeCanvas value={`${window.location.origin}/${pageSlug}`} size={150}/></div>}
                   </div>
              </div>
         )}
 
-        {/* --- SUPER ADMIN --- */}
+        {/* --- SUPER ADMIN POWER --- */}
         {isAdmin && (
-            <div className="mt-12 bg-gray-900 text-white p-6 rounded-xl border border-gray-800">
-                <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-orange-500"><FaCrown/> Painel Super Admin</h3>
-                <div className="overflow-x-auto">
+            <div className="mt-12 bg-gray-950 text-white p-8 rounded-3xl border border-gray-800 shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-orange-600/10 rounded-full blur-3xl pointer-events-none"></div>
+                
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 relative z-10">
+                    <div>
+                        <h3 className="text-2xl font-bold flex items-center gap-2 text-white"><FaCrown className="text-yellow-500"/> Painel de Controle</h3>
+                        <p className="text-gray-400 text-sm mt-1">Gerencie todos os donos de barbearia.</p>
+                    </div>
+                    
+                    {/* STATS CARDS */}
+                    <div className="flex gap-4">
+                        <div className="bg-gray-900 border border-gray-800 px-4 py-2 rounded-xl text-center">
+                            <span className="text-xs text-gray-500 uppercase font-bold">Total</span>
+                            <div className="text-xl font-bold text-white">{adminStats.total}</div>
+                        </div>
+                        <div className="bg-gray-900 border border-orange-500/30 px-4 py-2 rounded-xl text-center">
+                            <span className="text-xs text-orange-500 uppercase font-bold">Pro</span>
+                            <div className="text-xl font-bold text-orange-400">{adminStats.pro}</div>
+                        </div>
+                        <div className="bg-gray-900 border border-gray-800 px-4 py-2 rounded-xl text-center">
+                            <span className="text-xs text-blue-400 uppercase font-bold">Free</span>
+                            <div className="text-xl font-bold text-blue-300">{adminStats.trial}</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* SEARCH BAR */}
+                <div className="relative mb-6">
+                    <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"/>
+                    <input 
+                        type="text" 
+                        placeholder="Buscar por nome, email..." 
+                        value={adminSearch}
+                        onChange={(e) => setAdminSearch(e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-800 rounded-xl py-3 pl-12 pr-4 text-white placeholder-gray-600 focus:border-orange-500 focus:outline-none transition"
+                    />
+                </div>
+
+                {/* TABLE */}
+                <div className="overflow-x-auto rounded-xl border border-gray-800">
                     <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-800 text-gray-400 font-bold uppercase text-xs"><tr><th className="p-3">Data</th><th className="p-3">Nome</th><th className="p-3">Email</th><th className="p-3">Plano</th><th className="p-3 text-right">Ação</th></tr></thead>
-                        <tbody className="divide-y divide-gray-800">{allUsers.map((u) => (<tr key={u.uid} className="hover:bg-gray-800/50 transition"><td className="p-3 text-gray-500 text-xs">{u.createdAt?.seconds ? new Date(u.createdAt.seconds * 1000).toLocaleDateString() : '-'}</td><td className="p-3 font-bold">{u.displayName || 'Sem Nome'}</td><td className="p-3 text-gray-400">{u.email}</td><td className="p-3"><span className={`px-2 py-1 rounded text-xs font-bold ${u.plan === 'pro' ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-300'}`}>{u.plan ? u.plan.toUpperCase() : 'FREE'}</span></td><td className="p-3 text-right"><button onClick={() => handleTogglePlan(u)} className={`px-3 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ml-auto ${u.plan === 'pro' ? 'border-red-500 text-red-400 hover:bg-red-500/10' : 'border-green-500 text-green-400 hover:bg-green-500/10'}`}>{u.plan === 'pro' ? <><FaToggleOff/> Desativar</> : <><FaToggleOn/> Virar Pro</>}</button></td></tr>))}</tbody>
+                        <thead className="bg-gray-900 text-gray-400 font-bold uppercase text-xs">
+                            <tr>
+                                <th className="p-4">Dono</th>
+                                <th className="p-4">Plano Atual</th>
+                                <th className="p-4">Status / Dias</th>
+                                <th className="p-4 text-right">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-800">
+                            {filteredUsers.length === 0 ? (
+                                <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhum usuário encontrado.</td></tr>
+                            ) : (
+                                filteredUsers.map((u) => {
+                                    // Lógica de Dias Restantes (Trial)
+                                    let daysLeft = 0;
+                                    let isExpired = false;
+                                    const isPro = u.plan === 'pro';
+                                    
+                                    if (!isPro && u.trialDeadline) {
+                                        try {
+                                            const deadline = new Date(u.trialDeadline.seconds * 1000);
+                                            const now = new Date();
+                                            const diffTime = deadline.getTime() - now.getTime();
+                                            daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                            if (daysLeft < 0) { daysLeft = 0; isExpired = true; }
+                                        } catch (e) { daysLeft = 0; }
+                                    }
+
+                                    return (
+                                        <tr key={u.uid} className="hover:bg-gray-900/50 transition bg-gray-900/20">
+                                            <td className="p-4">
+                                                <div className="font-bold text-white">{u.displayName || 'Sem Nome'}</div>
+                                                <div className="text-xs text-gray-500">{u.email}</div>
+                                                <div className="text-[10px] text-gray-600 mt-1">Criado em: {u.createdAt?.seconds ? new Date(u.createdAt.seconds * 1000).toLocaleDateString() : '-'}</div>
+                                            </td>
+                                            <td className="p-4">
+                                                {isPro ? (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                                                        <FaStar size={10}/> PRO
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-800 text-gray-400 border border-gray-700">
+                                                        FREE
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="p-4">
+                                                {isPro ? (
+                                                    <div>
+                                                        <span className="text-green-400 font-bold text-xs flex items-center gap-1"><FaCheck size={10}/> Ativo</span>
+                                                        <div className="w-24 h-1.5 bg-gray-800 rounded-full mt-1 overflow-hidden">
+                                                            <div className="h-full bg-green-500 w-full animate-pulse"></div>
+                                                        </div>
+                                                        <span className="text-[10px] text-gray-500">Renovação Mensal</span>
+                                                    </div>
+                                                ) : (
+                                                    <div>
+                                                        {isExpired ? (
+                                                            <span className="text-red-500 font-bold text-xs">Expirado</span>
+                                                        ) : (
+                                                            <>
+                                                                <span className="text-white font-bold text-xs">{daysLeft} dias restantes</span>
+                                                                <div className="w-24 h-1.5 bg-gray-800 rounded-full mt-1 overflow-hidden">
+                                                                    <div 
+                                                                        className={`h-full ${daysLeft > 3 ? 'bg-blue-500' : 'bg-red-500'} transition-all`} 
+                                                                        style={{width: `${(daysLeft / 7) * 100}%`}}
+                                                                    ></div>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="p-4 text-right">
+                                                <button 
+                                                    onClick={() => handleTogglePlan(u)} 
+                                                    className={`px-4 py-2 rounded-lg text-xs font-bold border transition inline-flex items-center gap-2 ${
+                                                        u.plan === 'pro' 
+                                                        ? 'border-gray-700 text-gray-400 hover:bg-gray-800 hover:text-white' 
+                                                        : 'bg-orange-600 border-orange-600 text-white hover:bg-orange-500'
+                                                    }`}
+                                                >
+                                                    {u.plan === 'pro' ? <><FaToggleOff/> Desativar</> : <><FaBolt/> Ativar Pro</>}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    )
+                                })
+                            )}
+                        </tbody>
                     </table>
                 </div>
             </div>

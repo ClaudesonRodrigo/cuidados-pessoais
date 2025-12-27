@@ -1,4 +1,3 @@
-// src/components/SortableLinkItem.tsx
 'use client';
 
 import React from 'react';
@@ -9,6 +8,7 @@ import Image from 'next/image';
 import { LinkData } from '@/lib/pageService';
 
 interface Props {
+  id: string; // <--- ADICIONADO: Agora aceita o ID único do pai
   link: LinkData;
   index: number;
   onEdit: () => void;
@@ -16,9 +16,10 @@ interface Props {
   editingIndex: number | null;
 }
 
-export function SortableLinkItem({ link, index, onEdit, onDelete, editingIndex }: Props) {
+export function SortableLinkItem({ id, link, index, onEdit, onDelete, editingIndex }: Props) {
+  // Agora usamos o 'id' que veio do pai, garantindo que seja igual
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ 
-    id: (link.url || link.title) + index 
+    id: id 
   });
 
   const style = {
@@ -26,9 +27,6 @@ export function SortableLinkItem({ link, index, onEdit, onDelete, editingIndex }
     transition,
   };
 
-  // Se estiver sendo editado, podemos mudar o visual ou ocultar (opcional)
-  // Mas aqui vamos manter o card padrão
-  
   return (
     <div 
         ref={setNodeRef} 
@@ -58,7 +56,6 @@ export function SortableLinkItem({ link, index, onEdit, onDelete, editingIndex }
       </div>
 
       {/* 3. Conteúdo (Título + Preço + Descrição) */}
-      {/* min-w-0 é o segredo para o truncate funcionar dentro do flex */}
       <div className="flex-1 min-w-0 flex flex-col justify-center">
         
         {/* Linha Superior: Título e Preço */}
@@ -83,7 +80,7 @@ export function SortableLinkItem({ link, index, onEdit, onDelete, editingIndex }
       {/* 4. Botões de Ação */}
       <div className="flex gap-1 shrink-0 pl-1 border-l border-gray-100 ml-1">
         <button 
-            onClick={(e) => { e.stopPropagation(); onEdit(); }} // StopPropagation evita iniciar o drag ao clicar
+            onClick={(e) => { e.stopPropagation(); onEdit(); }} 
             className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition active:scale-95"
             title="Editar"
         >
