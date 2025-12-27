@@ -1,4 +1,3 @@
-// src/app/[slug]/page.tsx
 'use client';
 
 import { useEffect, useState, use } from 'react';
@@ -6,7 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { signInWithGoogle, signOutUser } from '@/lib/authService';
 import { 
   getPageDataBySlug, getAppointmentsByDate, createAppointment, getAppointmentsByCustomer,
-  PageData, LinkData, AppointmentData 
+  PageData, LinkData, AppointmentData, ScheduleData 
 } from "@/lib/pageService";
 import { generateAvailableSlots } from '@/lib/availability';
 import { Timestamp } from 'firebase/firestore'; 
@@ -14,7 +13,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { 
   FaMapMarkerAlt, FaWhatsapp, FaCut, FaCalendarAlt, FaClock, 
-  FaCheckCircle, FaTimes, FaStoreSlash, FaExclamationTriangle, FaShoppingBag, FaCopy, FaQrcode, FaGoogle, FaHistory, FaSignOutAlt
+  FaCheckCircle, FaTimes, FaStoreSlash, FaExclamationTriangle, FaShoppingBag, FaCopy, FaQrcode, FaGoogle, FaHistory, FaSignOutAlt, FaChevronRight
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -25,17 +24,18 @@ interface ExtendedPageData extends PageData {
   plan?: string;
   isOpen?: boolean;
   whatsapp?: string;
-  pixKey?: string; 
+  pixKey?: string;
+  schedule?: ScheduleData;
 }
 
-// --- SKELETON ---
+// --- SKELETON (Carregamento) ---
 function MenuSkeleton() {
   return (
-    <div className="min-h-screen bg-gray-900 px-4 py-10 animate-pulse">
-        <div className="w-24 h-24 bg-gray-700 rounded-full mx-auto mb-4"/>
-        <div className="h-8 bg-gray-700 w-48 mx-auto mb-2 rounded"/>
-        <div className="h-4 bg-gray-700 w-64 mx-auto mb-8 rounded"/>
-        <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="bg-gray-800 h-28 rounded-xl w-full"/>)}</div>
+    <div className="min-h-screen bg-gray-950 px-4 py-10 animate-pulse">
+        <div className="w-24 h-24 bg-gray-800 rounded-full mx-auto mb-4"/>
+        <div className="h-8 bg-gray-800 w-48 mx-auto mb-2 rounded"/>
+        <div className="h-4 bg-gray-800 w-64 mx-auto mb-8 rounded"/>
+        <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="bg-gray-900 h-24 rounded-xl w-full border border-gray-800"/>)}</div>
     </div>
   );
 }
@@ -43,20 +43,36 @@ function MenuSkeleton() {
 // --- ERRO 404 ---
 function NotFoundState() {
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center font-sans text-gray-800">
-            <div className="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full border border-gray-100">
-                <div className="bg-orange-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"><FaExclamationTriangle className="text-orange-500 text-4xl" /></div>
+        <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-4 text-center font-sans text-gray-200">
+            <div className="bg-gray-900 p-8 rounded-2xl shadow-2xl max-w-sm w-full border border-gray-800">
+                <div className="bg-orange-500/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"><FaExclamationTriangle className="text-orange-500 text-4xl" /></div>
                 <h1 className="text-2xl font-bold mb-2">Barbearia não encontrada</h1>
-                <p className="text-gray-500 mb-6">O link que você acessou não existe ou foi desativado.</p>
-                <Link href="/" className="block w-full bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-black transition">Criar minha Página</Link>
+                <p className="text-gray-400 mb-6">O link que você acessou não existe ou foi desativado.</p>
+                <Link href="/" className="block w-full bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700 transition">Criar minha Página</Link>
             </div>
         </div>
     );
 }
 
+// --- UTILITÁRIO: GERAR DIAS (Horizontal Scroll) ---
+const getNextDays = (days: number) => {
+    const dates = [];
+    const today = new Date();
+    for (let i = 0; i < days; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        dates.push({
+            fullDate: d.toISOString().split('T')[0], // YYYY-MM-DD
+            dayName: i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : d.toLocaleDateString('pt-BR', { weekday: 'short' }).slice(0,3),
+            dayNumber: d.getDate()
+        });
+    }
+    return dates;
+};
+
 export default function SchedulingPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
-  const { user } = useAuth(); // Hook de Autenticação
+  const { user } = useAuth();
   
   const [pageData, setPageData] = useState<ExtendedPageData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,7 +82,10 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [cart, setCart] = useState<LinkData[]>([]); 
   const [isSelectorOpen, setIsSelectorOpen] = useState(false); 
   
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]); 
+  // DATA SELECTION (Novo Visual)
+  const nextDays = getNextDays(14); // Gera 14 dias
+  const [selectedDate, setSelectedDate] = useState<string>(nextDays[0].fullDate); 
+  
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   
@@ -92,7 +111,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
       if (user?.displayName) setCustomerName(user.displayName);
   }, [user]);
 
-  // Carregar Dados
+  // Carregar Dados da Página
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -101,6 +120,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         if (!data) setError(true); 
         else {
             setPageData(data);
+            // Lógica de Tema (CSS Global)
             const theme = data.theme || 'dark';
             document.documentElement.className = "";
             if (data.backgroundImage) document.documentElement.classList.add('theme-custom-image');
@@ -111,7 +131,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
     fetchData();
   }, [resolvedParams.slug]);
 
-  // 2. Carregar Horários (CORRIGIDO)
+  // Carregar Horários (Com correção de Fuso e Schedule)
   useEffect(() => {
     if (!pageData || totalDuration === 0 || !isSelectorOpen) return;
 
@@ -119,27 +139,22 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         setLoadingSlots(true);
         setAvailableSlots([]);
 
-        // --- CORREÇÃO DE DATA NA BUSCA ---
-        // Força o horário local (00:00:00) para evitar buscar o dia anterior (UTC)
+        // CORREÇÃO: Força 00:00 local
         const dateStr = `${selectedDate}T00:00:00`; 
         
         const startOfDay = new Date(dateStr);
         const endOfDay = new Date(dateStr);
-        endOfDay.setHours(23, 59, 59, 999); // Final do dia exato
+        endOfDay.setHours(23, 59, 59, 999); 
 
-        console.log("🔍 Buscando agenda para:", startOfDay.toLocaleString());
-
-        // Busca o que já está ocupado no banco
+        // Busca ocupados no Banco
         const busyAppointments = await getAppointmentsByDate(resolvedParams.slug, startOfDay, endOfDay);
-        
-        console.log("❌ Ocupados encontrados:", busyAppointments.length);
 
-        // Calcula os buracos livres
+        // Calcula Livres (Passando o Schedule do Dono)
         const slots = generateAvailableSlots(
             startOfDay, 
             totalDuration, 
             busyAppointments,
-            pageData.schedule // AGORA PASSAMOS A CONFIG DO DONO
+            pageData.schedule // Passando a config do dono
         );
 
         setAvailableSlots(slots);
@@ -154,12 +169,14 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
       const exists = cart.find(i => i.title === item.title);
       if (exists) setCart(cart.filter(i => i.title !== item.title));
       else setCart([...cart, item]);
+      // Se mudar serviços, reseta seleção de hora mas mantém data
       setIsSelectorOpen(false); setSelectedTime(null);
   };
 
   const handleProceedToDate = () => {
       if (cart.length === 0) return alert("Escolha pelo menos um serviço.");
       setIsSelectorOpen(true);
+      // Scroll suave até o calendário
       setTimeout(() => { document.getElementById('date-picker-section')?.scrollIntoView({ behavior: 'smooth' }); }, 100);
   };
 
@@ -173,12 +190,8 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   };
 
   const handleLogin = async () => { 
-      try { 
-          // AQUI: Força role 'customer' para quem entra pela vitrine
-          await signInWithGoogle('customer'); 
-      } catch (error) { 
-          alert("Erro ao fazer login com Google."); 
-      } 
+      try { await signInWithGoogle('customer'); } 
+      catch (error) { alert("Erro ao fazer login com Google."); } 
   };
 
   const handleOpenHistory = async () => {
@@ -193,15 +206,11 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const handleConfirmBooking = async () => {
       if (!customerName || !selectedTime || cart.length === 0 || !pageData || !user) return;
       setIsBooking(true);
-
       try {
           const [hours, minutes] = selectedTime.split(':').map(Number);
           
-          // --- CORREÇÃO DO BUG DE DATA (-1 DIA) ---
-          // Antes: new Date(selectedDate) -> Interpretava como UTC (00:00 Londres = 21:00 Brasil Dia Anterior)
-          // Agora: new Date(selectedDate + 'T00:00:00') -> Força interpretação como Horário Local do Navegador
+          // Correção de Fuso na Gravação
           const startDate = new Date(`${selectedDate}T00:00:00`);
-          
           startDate.setHours(hours, minutes, 0, 0);
 
           const endDate = new Date(startDate.getTime() + totalDuration * 60000);
@@ -222,35 +231,17 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
               totalValue: totalPrice,
               createdAt: Timestamp.now()
           };
-          
           await createAppointment(newAppointment);
 
-          // WhatsApp (Lógica mantida)
           const phone = pageData.whatsapp?.replace(/\D/g, '') || '';
-          let msg = `*NOVO AGENDAMENTO ✂️*\n\n`;
-          msg += `👤 *Cliente:* ${customerName}\n`;
-          msg += `📧 *Email:* ${user.email}\n`;
-          msg += `📅 *Data:* ${startDate.toLocaleDateString('pt-BR')} às *${selectedTime}*\n`;
-          msg += `🛒 *Serviços:* ${servicesString}\n`;
-          msg += `⏱ *Duração:* ${totalDuration} min\n`;
-          msg += `💰 *Total:* R$ ${totalPrice.toFixed(2)}\n\n`;
-          msg += `_Solicitação enviada. Aguardando confirmação._`;
-
+          let msg = `*NOVO AGENDAMENTO ✂️*\n\n👤 *Cliente:* ${customerName}\n📧 *Email:* ${user.email}\n📅 *Data:* ${startDate.toLocaleDateString('pt-BR')} às *${selectedTime}*\n🛒 *Serviços:* ${servicesString}\n⏱ *Duração:* ${totalDuration} min\n💰 *Total:* R$ ${totalPrice.toFixed(2)}\n\n_Solicitação enviada. Aguardando confirmação._`;
           window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
           
-          setIsCheckoutOpen(false);
-          setCart([]);
-          setIsSelectorOpen(false);
-
-      } catch (error) {
-          alert("Erro ao processar. Tente novamente.");
-          console.error(error);
-      } finally {
-          setIsBooking(false);
-      }
+          setIsCheckoutOpen(false); setCart([]); setIsSelectorOpen(false);
+      } catch (error) { alert("Erro ao processar. Tente novamente."); } finally { setIsBooking(false); }
   };
 
-  function handleLocation() { if (pageData?.address) window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pageData.address)}`, '_blank'); }
+  const handleLocation = () => { if(pageData?.address) window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pageData.address)}`, '_blank'); };
 
   if (loading) return <MenuSkeleton />;
   if (error || !pageData) return <NotFoundState />;
@@ -259,49 +250,48 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const hasPix = !!pageData.pixKey; 
 
   return (
-    <div className="min-h-screen font-sans text-white bg-gray-900 pb-40" 
+    <div className="min-h-screen font-sans text-white bg-gray-950 pb-40" 
          style={pageData.backgroundImage ? { backgroundImage: `linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.95)), url(${pageData.backgroundImage})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' } : {}}>
       
       {/* HEADER */}
-      <header className="pt-6 pb-6 px-4 relative">
-        <div className="flex justify-between items-center mb-4">
-             {/* ÁREA DO CLIENTE LOGADO */}
+      <header className="pt-6 pb-6 px-4 relative max-w-lg mx-auto">
+        <div className="flex justify-between items-center mb-6">
+             {/* LOGIN/PERFIL */}
              {user ? (
-                 <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
-                     {user.photoURL && <img src={user.photoURL} className="w-6 h-6 rounded-full border border-white/30" alt="avatar"/>}
-                     <button onClick={handleOpenHistory} className="text-xs font-bold text-white hover:text-orange-400 transition flex items-center gap-1">
-                         Meus Agendamentos
-                     </button>
+                 <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10 hover:bg-white/10 transition cursor-pointer" onClick={handleOpenHistory}>
+                     {user.photoURL ? <img src={user.photoURL} className="w-6 h-6 rounded-full border border-white/20" alt="avatar"/> : <div className="w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center text-xs font-bold text-white">{user.displayName?.charAt(0)}</div>}
+                     <span className="text-xs font-bold text-gray-300">Meus Cortes</span>
                  </div>
              ) : (
-                 <button onClick={handleLogin} className="text-xs font-bold bg-white text-gray-900 px-3 py-1.5 rounded-full hover:bg-gray-100 flex items-center gap-2">
+                 <button onClick={handleLogin} className="text-xs font-bold bg-white text-gray-900 px-4 py-2 rounded-full hover:bg-gray-200 flex items-center gap-2 shadow-lg shadow-white/5 transition">
                      <FaGoogle/> Entrar
                  </button>
              )}
 
-             {/* Logout (só se quiser sair da conta nessa página, opcional) */}
-             {user && <button onClick={signOutUser} className="text-white/50 hover:text-white"><FaSignOutAlt/></button>}
+             {user && <button onClick={signOutUser} className="text-gray-500 hover:text-white transition"><FaSignOutAlt/></button>}
         </div>
 
         <div className="text-center">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-orange-500 mx-auto bg-gray-800 mb-4 relative shadow-lg shadow-orange-500/20">
-                {pageData.profileImageUrl ? <Image src={pageData.profileImageUrl} alt="Logo" fill className="object-cover" sizes="96px" priority /> : <div className="flex items-center justify-center h-full text-white/30 text-3xl"><FaCut/></div>}
+            <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-gray-800 mx-auto bg-gray-900 mb-4 relative shadow-2xl shadow-orange-500/10 ring-2 ring-orange-500/50">
+                {pageData.profileImageUrl ? <Image src={pageData.profileImageUrl} alt="Logo" fill className="object-cover" sizes="112px" priority /> : <div className="flex items-center justify-center h-full text-white/30 text-3xl"><FaCut/></div>}
             </div>
             <h1 className="text-2xl font-bold mb-2 text-white">{pageData.title}</h1>
-            <p className="text-gray-400 text-sm max-w-md mx-auto">{pageData.bio}</p>
+            <p className="text-gray-400 text-sm max-w-xs mx-auto leading-relaxed">{pageData.bio}</p>
             {isClosed ? (
-                <div className="bg-red-600/20 border border-red-500 text-red-400 text-xs font-bold px-4 py-2 rounded-full inline-flex items-center gap-2 mt-4"><FaStoreSlash/> FECHADO NO MOMENTO</div>
+                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold px-4 py-2 rounded-full inline-flex items-center gap-2 mt-4"><FaStoreSlash/> LOJA FECHADA</div>
             ) : (
-                pageData.address && <button onClick={handleLocation} className="mt-4 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 mx-auto transition"><FaMapMarkerAlt className="text-orange-500" /> Ver Endereço</button>
+                pageData.address && <button onClick={handleLocation} className="mt-4 bg-white/5 border border-white/10 hover:bg-white/10 hover:border-orange-500/30 text-gray-300 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 mx-auto transition"><FaMapMarkerAlt className="text-orange-500" /> Ver Endereço</button>
             )}
         </div>
       </header>
 
       <main className="container mx-auto max-w-lg px-4 space-y-8">
         
-        {/* SERVIÇOS */}
+        {/* LISTA DE SERVIÇOS */}
         <div>
-            <h2 className="text-orange-500 font-bold text-sm uppercase tracking-wider mb-4 flex items-center gap-2"><FaCut/> Escolha os Serviços</h2>
+            <h2 className="text-gray-500 font-bold text-xs uppercase tracking-widest mb-4 flex items-center gap-2 px-1">
+                <FaCut className="text-orange-500"/> Selecione os Serviços
+            </h2>
             <div className="space-y-3">
                 {pageData.links?.map((item, index) => {
                     const isInCart = cart.some(i => i.title === item.title);
@@ -310,19 +300,33 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                             key={index} 
                             initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} transition={{delay: index*0.05}}
                             onClick={() => !isClosed && toggleCartItem(item)}
-                            className={`bg-gray-800/50 border ${isInCart ? 'border-orange-500 bg-orange-500/10' : 'border-gray-700 hover:border-gray-600'} rounded-xl p-4 flex gap-4 cursor-pointer transition-all group relative`}
+                            className={`relative overflow-hidden rounded-xl border p-4 flex gap-4 cursor-pointer transition-all duration-300 ${isInCart ? 'bg-orange-500/10 border-orange-500 shadow-lg shadow-orange-500/10' : 'bg-gray-900 border-gray-800 hover:border-gray-700'}`}
                         >
-                            {isInCart && <div className="absolute top-2 right-2 text-orange-500 bg-orange-500/20 rounded-full p-1"><FaCheckCircle/></div>}
-                            {item.imageUrl && <div className="w-16 h-16 rounded-lg bg-gray-700 relative overflow-hidden shrink-0"><Image src={item.imageUrl} alt={item.title} fill className="object-cover" sizes="64px" /></div>}
-                            <div className="flex-1">
-                                <div className="flex justify-between items-start pr-6">
-                                    <h3 className={`font-bold ${isInCart ? 'text-orange-400' : 'text-white'}`}>{item.title}</h3>
-                                    {item.price && <span className="text-white font-bold text-sm bg-gray-700 px-2 py-1 rounded">R$ {item.price}</span>}
+                            {/* Checkmark animado */}
+                            <div className={`absolute top-3 right-3 transition-transform duration-300 ${isInCart ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}`}>
+                                <FaCheckCircle className="text-orange-500 text-xl bg-gray-900 rounded-full"/>
+                            </div>
+
+                            {item.imageUrl ? (
+                                <div className="w-16 h-16 rounded-lg bg-gray-800 relative overflow-hidden shrink-0 border border-white/5">
+                                    <Image src={item.imageUrl} alt={item.title} fill className="object-cover" sizes="64px" />
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1 line-clamp-1">{item.description}</p>
-                                <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
-                                    <FaClock size={10}/> {item.durationMinutes || 30} min
+                            ) : (
+                                <div className="w-16 h-16 rounded-lg bg-gray-800 flex items-center justify-center shrink-0 border border-white/5 text-gray-600">
+                                    <FaCut/>
                                 </div>
+                            )}
+                            
+                            <div className="flex-1 pr-6">
+                                <div className="flex justify-between items-start mb-1">
+                                    <h3 className={`font-bold text-base leading-tight ${isInCart ? 'text-white' : 'text-gray-200'}`}>{item.title}</h3>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {item.price && <span className="text-orange-400 font-bold text-sm">R$ {item.price}</span>}
+                                    <div className="w-1 h-1 bg-gray-700 rounded-full"/>
+                                    <span className="text-gray-500 text-xs flex items-center gap-1"><FaClock size={10}/> {item.durationMinutes || 30} min</span>
+                                </div>
+                                {item.description && <p className="text-xs text-gray-500 mt-2 line-clamp-1">{item.description}</p>}
                             </div>
                         </motion.div>
                     );
@@ -330,35 +334,74 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
             </div>
         </div>
 
-        {/* CALENDÁRIO */}
+        {/* SELEÇÃO DE DATA E HORA (Aparece ao selecionar serviço) */}
         <AnimatePresence>
             {isSelectorOpen && !isClosed && (
-                <motion.div id="date-picker-section" initial={{opacity: 0, height: 0}} animate={{opacity: 1, height: 'auto'}} exit={{opacity: 0, height: 0}} className="space-y-6 pt-8 border-t border-gray-800">
-                    <div className="bg-gray-800/40 p-4 rounded-xl border border-gray-700">
-                        <h3 className="text-white font-bold mb-1 flex items-center gap-2"><FaShoppingBag className="text-orange-500"/> Resumo do Pedido</h3>
-                        <p className="text-gray-400 text-xs">Você selecionou: <span className="text-white">{cart.map(i=>i.title).join(', ')}</span></p>
-                        <p className="text-gray-400 text-xs">Tempo Total estimado: <span className="text-white font-bold">{totalDuration} min</span></p>
+                <motion.div 
+                    id="date-picker-section" 
+                    initial={{opacity: 0, height: 0}} animate={{opacity: 1, height: 'auto'}} exit={{opacity: 0, height: 0}} 
+                    className="space-y-8 pt-8 border-t border-gray-800/50"
+                >
+                    {/* RESUMO RÁPIDO */}
+                    <div className="flex justify-between items-center bg-gray-900 p-4 rounded-xl border border-gray-800">
+                        <div>
+                            <p className="text-gray-400 text-xs uppercase font-bold mb-1">Resumo do Pedido</p>
+                            <p className="text-white text-sm font-medium">{cart.length} serviço(s) selecionado(s)</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-gray-400 text-xs uppercase font-bold mb-1">Tempo Total</p>
+                            <p className="text-orange-500 font-bold text-lg">{totalDuration} min</p>
+                        </div>
                     </div>
+
+                    {/* HORIZONTAL DATE PICKER (NOVO!) */}
                     <div>
-                        <h2 className="text-orange-500 font-bold text-sm uppercase tracking-wider mb-4 flex items-center gap-2"><FaCalendarAlt/> Escolha a Data</h2>
-                        <input type="date" value={selectedDate} min={new Date().toISOString().split('T')[0]} onChange={(e) => setSelectedDate(e.target.value)} className="w-full bg-gray-800 text-white border border-gray-700 rounded-xl p-4 font-bold outline-none focus:border-orange-500" />
+                        <h2 className="text-gray-500 font-bold text-xs uppercase tracking-widest mb-4 flex items-center gap-2 px-1">
+                            <FaCalendarAlt className="text-orange-500"/> Escolha a Data
+                        </h2>
+                        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4 snap-x">
+                            {nextDays.map((day) => {
+                                const isSelected = day.fullDate === selectedDate;
+                                return (
+                                    <button 
+                                        key={day.fullDate} 
+                                        onClick={() => setSelectedDate(day.fullDate)}
+                                        className={`shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center gap-1 transition-all border snap-center ${isSelected ? 'bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-900/50 scale-105' : 'bg-gray-900 border-gray-800 text-gray-400 hover:border-gray-600 hover:bg-gray-800'}`}
+                                    >
+                                        <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">{day.dayName}</span>
+                                        <span className="text-xl font-bold">{day.dayNumber}</span>
+                                    </button>
+                                )
+                            })}
+                        </div>
                     </div>
+
+                    {/* HORÁRIOS (GRID) */}
                     <div>
-                        <h2 className="text-orange-500 font-bold text-sm uppercase tracking-wider mb-4 flex items-center gap-2"><FaClock/> Horários Disponíveis</h2>
+                        <h2 className="text-gray-500 font-bold text-xs uppercase tracking-widest mb-4 flex items-center gap-2 px-1">
+                            <FaClock className="text-orange-500"/> Horários Disponíveis
+                        </h2>
                         {loadingSlots ? (
-                            <div className="flex justify-center py-8"><div className="animate-spin w-6 h-6 border-2 border-orange-500 rounded-full border-t-transparent"/></div>
+                            <div className="flex flex-col items-center justify-center py-12 text-gray-500 gap-3">
+                                <div className="animate-spin w-6 h-6 border-2 border-orange-500 rounded-full border-t-transparent"/>
+                                <span className="text-xs">Buscando disponibilidade...</span>
+                            </div>
                         ) : availableSlots.length > 0 ? (
-                            <div className="grid grid-cols-4 gap-2">
+                            <div className="grid grid-cols-4 gap-3">
                                 {availableSlots.map(time => (
-                                    <button key={time} onClick={() => handleTimeClick(time)} className="bg-gray-800 border border-gray-700 hover:border-orange-500 hover:bg-orange-500 hover:text-white text-gray-300 py-2 rounded-lg text-sm font-bold transition">
+                                    <button 
+                                        key={time} 
+                                        onClick={() => handleTimeClick(time)} 
+                                        className="bg-gray-900 border border-gray-800 text-white py-3 rounded-lg text-sm font-bold hover:bg-orange-500 hover:border-orange-500 hover:shadow-lg transition active:scale-95"
+                                    >
                                         {time}
                                     </button>
                                 ))}
                             </div>
                         ) : (
-                            <div className="text-center py-6 bg-gray-800/30 rounded-xl border border-gray-800">
-                                <p className="text-gray-400 text-sm">Nenhum horário livre para essa combinação.</p>
-                                <p className="text-xs text-gray-600 mt-1">Tente diminuir os serviços ou mudar a data.</p>
+                            <div className="text-center py-10 bg-gray-900/50 rounded-xl border border-gray-800 border-dashed">
+                                <p className="text-gray-400 text-sm font-medium">Nenhum horário livre nesta data.</p>
+                                <p className="text-xs text-gray-600 mt-2">Tente selecionar outro dia no calendário acima.</p>
                             </div>
                         )}
                     </div>
@@ -367,64 +410,127 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         </AnimatePresence>
       </main>
 
-      {/* FOOTER FIXO */}
+      {/* FOOTER FLUTUANTE (Cart) */}
       {!isSelectorOpen && cart.length > 0 && !isClosed && (
-          <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-4 z-40 pb-8">
+          <motion.div initial={{y: 100}} animate={{y: 0}} className="fixed bottom-0 left-0 right-0 bg-gray-900/90 backdrop-blur-md border-t border-gray-800 p-4 z-40 pb-8 safe-area-pb">
               <div className="container mx-auto max-w-lg flex items-center justify-between">
-                  <div>
-                      <p className="text-gray-400 text-xs">Total a pagar</p>
-                      <p className="text-white font-bold text-xl">R$ {totalPrice.toFixed(2)}</p>
+                  <div className="flex flex-col">
+                      <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider">Total Estimado</span>
+                      <span className="text-white font-bold text-xl flex items-baseline gap-1">
+                          R$ {totalPrice.toFixed(2)}
+                          <span className="text-xs text-gray-500 font-normal">/ {totalDuration} min</span>
+                      </span>
                   </div>
-                  <button onClick={handleProceedToDate} className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-orange-900/20 transition">
-                      Agendar Horário
+                  <button onClick={handleProceedToDate} className="bg-orange-600 hover:bg-orange-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-orange-900/20 transition flex items-center gap-2">
+                      Agendar <FaChevronRight size={12}/>
                   </button>
               </div>
-          </div>
+          </motion.div>
       )}
 
       {/* MODAL CHECKOUT */}
       <AnimatePresence>
         {isCheckoutOpen && (
-            <motion.div initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/90 backdrop-blur-sm">
-                <motion.div initial={{y: '100%'}} animate={{y: 0}} exit={{y: '100%'}} className="bg-gray-900 w-full max-w-sm sm:rounded-2xl rounded-t-3xl border border-gray-700 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <motion.div initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/80 backdrop-blur-sm">
+                <motion.div 
+                    initial={{y: '100%'}} animate={{y: 0}} exit={{y: '100%'}} 
+                    className="bg-gray-900 w-full max-w-sm sm:rounded-2xl rounded-t-3xl border border-gray-800 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+                >
                     <div className="p-6 space-y-6">
-                        <div className="flex justify-between items-start">
-                            <div><h3 className="text-xl font-bold text-white">Confirmação</h3><p className="text-xs text-gray-400">Finalize para garantir seu horário</p></div>
-                            <button onClick={() => setIsCheckoutOpen(false)} className="text-gray-500 hover:text-white bg-gray-800 p-2 rounded-full"><FaTimes/></button>
+                        {/* Header Modal */}
+                        <div className="flex justify-between items-start border-b border-gray-800 pb-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Revisar e Confirmar</h3>
+                                <p className="text-xs text-gray-400 mt-1">Quase lá! Confirme os dados abaixo.</p>
+                            </div>
+                            <button onClick={() => setIsCheckoutOpen(false)} className="text-gray-500 hover:text-white bg-gray-800 p-2 rounded-full transition"><FaTimes/></button>
                         </div>
 
                         {!user ? (
-                            <div className="bg-orange-900/20 border border-orange-500/50 rounded-xl p-6 text-center space-y-4">
-                                <p className="text-orange-200 font-bold text-sm">🔒 Você precisa entrar para agendar</p>
-                                <button onClick={handleLogin} className="w-full bg-white text-gray-900 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-100 transition"><FaGoogle className="text-red-500"/> Entrar com Google</button>
+                            <div className="bg-gray-800 rounded-xl p-6 text-center space-y-4 border border-gray-700">
+                                <div className="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center mx-auto text-2xl">🔒</div>
+                                <div>
+                                    <p className="text-white font-bold text-sm">Identifique-se para agendar</p>
+                                    <p className="text-xs text-gray-400 mt-1">Usamos sua conta Google para segurança e histórico.</p>
+                                </div>
+                                <button onClick={handleLogin} className="w-full bg-white text-gray-900 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-100 transition shadow-lg">
+                                    <FaGoogle className="text-red-500"/> Entrar com Google
+                                </button>
                             </div>
                         ) : (
                             <>
-                                <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700 space-y-2 text-sm">
-                                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-700">
-                                    {/* 1. A imagem é condicional (só aparece se tiver URL) */}
-                                    {user.photoURL && (
-                                        <img src={user.photoURL} className="w-6 h-6 rounded-full" alt="avatar"/>
-                                    )}
-                                    
-                                    {/* 2. O texto fica FORA da condição da foto, mas dentro da div */}
-                                    <p className="text-gray-300 text-xs">
-                                        Logado como <span className="text-white font-bold">{user.displayName}</span>
-                                    </p>
-                                </div>
-                                    <div className="flex justify-between"><span className="text-gray-400">Data:</span> <span className="font-bold text-white">{new Date(selectedDate).toLocaleDateString('pt-BR')} às {selectedTime}</span></div>
-                                    <div className="flex justify-between"><span className="text-gray-400">Total:</span> <span className="font-bold text-green-400">R$ {totalPrice.toFixed(2)}</span></div>
-                                </div>
-                                {hasPix ? (
-                                    <div className="bg-gray-800 p-4 rounded-xl text-center border border-dashed border-gray-600">
-                                        <p className="text-orange-500 font-bold text-sm mb-3 flex justify-center items-center gap-2"><FaQrcode/> Pagamento via Pix</p>
-                                        <div className="bg-white p-2 rounded inline-block mb-3"><QRCodeCanvas value={pageData.pixKey!} size={120} /></div>
-                                        <button onClick={handleCopyPix} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg flex items-center gap-2 mx-auto transition border border-gray-600"><FaCopy/> {copyFeedback}</button>
+                                {/* Resumo do Agendamento */}
+                                <div className="space-y-4">
+                                    <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700 space-y-3">
+                                        <div className="flex items-center gap-3 pb-3 border-b border-gray-700">
+                                            {user.photoURL && <img src={user.photoURL} className="w-8 h-8 rounded-full border border-gray-600" alt="avatar"/>}
+                                            <div>
+                                                <p className="text-xs text-gray-400">Cliente</p>
+                                                <p className="text-white font-bold text-sm">{user.displayName}</p>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <p className="text-xs text-gray-400 mb-1">Data</p>
+                                                <p className="text-white font-bold text-sm bg-gray-900 px-2 py-1 rounded border border-gray-800 inline-block">{new Date(selectedDate).toLocaleDateString('pt-BR')}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-gray-400 mb-1">Horário</p>
+                                                <p className="text-white font-bold text-sm bg-gray-900 px-2 py-1 rounded border border-gray-800 inline-block">{selectedTime}</p>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-400 mb-1">Serviços</p>
+                                            <p className="text-gray-300 text-xs leading-relaxed">{cart.map(i => i.title).join(' + ')}</p>
+                                        </div>
                                     </div>
-                                ) : ( <div className="bg-yellow-900/20 p-3 rounded-lg border border-yellow-700/50 text-center"><p className="text-yellow-500 text-xs">Pagamento no local.</p></div> )}
+
+                                    <div className="flex justify-between items-center px-2">
+                                        <span className="text-gray-400 text-sm">Valor Total</span>
+                                        <span className="text-xl font-bold text-green-400">R$ {totalPrice.toFixed(2)}</span>
+                                    </div>
+                                </div>
+
+                                {/* PIX AREA */}
+                                {hasPix ? (
+                                    <div className="bg-gray-800 p-4 rounded-xl text-center border border-dashed border-gray-600 relative overflow-hidden">
+                                        <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-blue-500 to-purple-500"></div>
+                                        <p className="text-white font-bold text-sm mb-4 flex justify-center items-center gap-2"><FaQrcode className="text-blue-400"/> Pagamento via Pix</p>
+                                        <div className="bg-white p-3 rounded-lg inline-block mb-4 shadow-xl">
+                                            <QRCodeCanvas value={pageData.pixKey!} size={130} />
+                                        </div>
+                                        <button onClick={handleCopyPix} className="w-full bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition border border-gray-600">
+                                            <FaCopy/> {copyFeedback}
+                                        </button>
+                                        <p className="text-[10px] text-gray-500 mt-2">Copie a chave e pague no seu app de banco.</p>
+                                    </div>
+                                ) : ( 
+                                    <div className="bg-yellow-500/10 p-4 rounded-xl border border-yellow-500/30 flex items-center gap-3">
+                                        <div className="bg-yellow-500/20 p-2 rounded-full text-yellow-500"><FaShoppingBag/></div>
+                                        <div>
+                                            <p className="text-yellow-500 font-bold text-sm">Pagamento no Local</p>
+                                            <p className="text-yellow-500/70 text-xs">Pague diretamente na barbearia.</p>
+                                        </div>
+                                    </div> 
+                                )}
+
+                                {/* FORM WHATSAPP */}
                                 <div className="space-y-3 pt-2">
-                                    <input type="tel" placeholder="Seu WhatsApp (para confirmação)" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 text-white outline-none focus:border-orange-500 transition" />
-                                    <button onClick={handleConfirmBooking} disabled={isBooking || !customerPhone} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-lg shadow-green-900/20">{isBooking ? 'Agendando...' : <><FaWhatsapp size={22}/> {hasPix ? 'Enviar Comprovante' : 'Confirmar'}</>}</button>
+                                    <label className="text-xs font-bold text-gray-400 ml-1">Seu WhatsApp (para confirmação)</label>
+                                    <input 
+                                        type="tel" 
+                                        placeholder="(XX) 9XXXX-XXXX" 
+                                        value={customerPhone} 
+                                        onChange={e => setCustomerPhone(e.target.value)} 
+                                        className="w-full bg-gray-800 border border-gray-700 rounded-xl p-4 text-white outline-none focus:border-orange-500 focus:bg-gray-800/80 transition font-bold" 
+                                    />
+                                    <button 
+                                        onClick={handleConfirmBooking}
+                                        disabled={isBooking || !customerPhone}
+                                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-lg shadow-green-900/20 mt-4"
+                                    >
+                                        {isBooking ? 'Agendando...' : <><FaWhatsapp size={22}/> {hasPix ? 'Enviar Comprovante' : 'Confirmar Agendamento'}</>}
+                                    </button>
                                 </div>
                             </>
                         )}
@@ -434,29 +540,31 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         )}
       </AnimatePresence>
 
-      {/* MODAL HISTÓRICO (NOVO) */}
+      {/* MODAL HISTÓRICO */}
       <AnimatePresence>
         {isHistoryOpen && (
              <motion.div initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-                 <motion.div initial={{scale: 0.9}} animate={{scale: 1}} exit={{scale: 0.9}} className="bg-gray-900 w-full max-w-md rounded-2xl border border-gray-700 shadow-2xl relative max-h-[80vh] flex flex-col">
-                     <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+                 <motion.div initial={{scale: 0.9}} animate={{scale: 1}} exit={{scale: 0.9}} className="bg-gray-900 w-full max-w-md rounded-2xl border border-gray-800 shadow-2xl relative max-h-[80vh] flex flex-col">
+                     <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 rounded-t-2xl">
                          <h3 className="font-bold text-white flex items-center gap-2"><FaHistory className="text-orange-500"/> Meus Agendamentos</h3>
-                         <button onClick={() => setIsHistoryOpen(false)} className="text-gray-500 hover:text-white"><FaTimes/></button>
+                         <button onClick={() => setIsHistoryOpen(false)} className="text-gray-500 hover:text-white bg-gray-800 p-2 rounded-full"><FaTimes/></button>
                      </div>
-                     <div className="p-4 overflow-y-auto flex-1 space-y-3">
-                         {loadingHistory ? <div className="text-center text-gray-500 py-10">Carregando...</div> : historyApps.length === 0 ? <p className="text-center text-gray-500 py-10">Você ainda não tem agendamentos.</p> : (
+                     <div className="p-4 overflow-y-auto flex-1 space-y-3 bg-gray-950/50">
+                         {loadingHistory ? <div className="text-center text-gray-500 py-10">Carregando...</div> : historyApps.length === 0 ? <div className="text-center text-gray-500 py-10 flex flex-col items-center"><FaCalendarAlt size={30} className="mb-2 opacity-20"/><p>Nenhum agendamento ainda.</p></div> : (
                              historyApps.map(app => {
-                                 let start: Date; try { start = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any); } catch { start = new Date(); }
-                                 const statusMap = { pending: { label: 'Aguardando Pagamento', color: 'text-yellow-400 bg-yellow-900/20 border-yellow-800' }, confirmed: { label: 'Confirmado', color: 'text-green-400 bg-green-900/20 border-green-800' }, completed: { label: 'Concluído', color: 'text-blue-400 bg-blue-900/20 border-blue-800' }, cancelled: { label: 'Cancelado', color: 'text-red-400 bg-red-900/20 border-red-800' } };
+                                 let start; try { start = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any); } catch { start = new Date(); }
+                                 const statusMap = { pending: { label: 'Pendente', color: 'text-yellow-500 border-yellow-500/30 bg-yellow-500/10' }, confirmed: { label: 'Confirmado', color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' }, completed: { label: 'Concluído', color: 'text-green-500 border-green-500/30 bg-green-500/10' }, cancelled: { label: 'Cancelado', color: 'text-red-500 border-red-500/30 bg-red-500/10' } };
                                  const st = statusMap[app.status || 'pending'];
                                  return (
-                                     <div key={app.id} className={`p-3 rounded-lg border ${st.color} border border-opacity-50`}>
-                                         <div className="flex justify-between items-start mb-1">
-                                             <span className="font-bold text-white text-sm">{start.toLocaleDateString('pt-BR')} às {start.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</span>
-                                             <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${st.color}`}>{st.label}</span>
+                                     <div key={app.id} className={`p-4 rounded-xl border ${st.color} border bg-opacity-5 relative overflow-hidden`}>
+                                         <div className="flex justify-between items-start mb-2 relative z-10">
+                                             <div>
+                                                 <span className="font-bold text-white text-base block">{start.toLocaleDateString('pt-BR')}</span>
+                                                 <span className="text-sm opacity-80">{start.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</span>
+                                             </div>
+                                             <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded border border-opacity-20 ${st.color}`}>{st.label}</span>
                                          </div>
-                                         <p className="text-gray-400 text-xs line-clamp-1">{app.serviceName}</p>
-                                         <p className="text-gray-500 text-[10px] mt-1">Total: R$ {app.totalValue?.toFixed(2)}</p>
+                                         <p className="text-gray-400 text-xs line-clamp-1 relative z-10">{app.serviceName}</p>
                                      </div>
                                  )
                              })
