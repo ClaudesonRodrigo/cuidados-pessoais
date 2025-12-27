@@ -34,10 +34,10 @@ export default function LoginPage() {
         <div className="relative z-10">
           <h2 className="text-4xl font-bold mb-6">Bem-vindo de volta!</h2>
           <p className="text-blue-100 text-lg mb-8 leading-relaxed">
-            Gerencie seus links, analise suas métricas e personalize sua página para atrair mais clientes.
+            Gerencie sua Barbearia, analise suas métricas e personalize sua agenda digital para atrair mais clientes.
           </p>
           <div className="bg-white/10 backdrop-blur-sm p-6 rounded-xl border border-white/20">
-            <p className="italic">&quot;Desde que comecei a usar o Meus Links Pro, meus cliques no WhatsApp aumentaram 150%.&quot;</p>
+            <p className="italic">&quot;Desde que comecei a usar o meu agendamento PRO, meus cliques no WhatsApp aumentaram 150%.&quot;</p>
             <div className="mt-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white/30"></div>
               <span className="font-semibold text-sm">Usuário Satisfeito</span>
