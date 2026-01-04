@@ -26,7 +26,7 @@ import { UpgradeModal } from '@/components/UpgradeModal';
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
 
-// Temas
+// Templeid
 const themes = [
   { name: 'dark', label: 'Barber Dark', colorClass: 'bg-gray-900', isPro: false },
   { name: 'light', label: 'Clean', colorClass: 'bg-gray-100', isPro: false },
