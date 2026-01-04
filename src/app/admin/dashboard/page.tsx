@@ -12,7 +12,7 @@ import {
 } from '@/lib/pageService';
 import { 
   FaUserCog, FaImage, FaSave, FaQrcode, FaTag, FaTrashAlt,
-  FaUtensils, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff, FaStar, FaBolt, FaStore, FaArrowLeft, FaMagic
+  FaCut, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff, FaStar, FaBolt, FaStore, FaArrowLeft, FaMagic, FaCalendarDay, FaHeadset
 } from 'react-icons/fa';
 import Image from 'next/image';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -58,7 +58,7 @@ export default function DashboardPage() {
   const [isFiscalModalOpen, setIsFiscalModalOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); 
 
-  // Formulário: Serviços
+  // Formulários
   const [newItemTitle, setNewItemTitle] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemDesc, setNewItemDesc] = useState('');
@@ -67,7 +67,6 @@ export default function DashboardPage() {
   const [newItemDuration, setNewItemDuration] = useState('30');
   const [isUploadingItemImg, setIsUploadingItemImg] = useState(false);
 
-  // Formulário: Cupons
   const [newCouponCode, setNewCouponCode] = useState('');
   const [newCouponValue, setNewCouponValue] = useState('');
   const [newCouponType, setNewCouponType] = useState<'percent' | 'fixed'>('percent');
@@ -81,7 +80,7 @@ export default function DashboardPage() {
   const [editItemImage, setEditItemImage] = useState('');
   const [editItemDuration, setEditItemDuration] = useState('30');
 
-  // Perfil da Barbearia
+  // Perfil
   const [editingProfileTitle, setEditingProfileTitle] = useState('');
   const [editingProfileBio, setEditingProfileBio] = useState('');
   const [editingProfileAddress, setEditingProfileAddress] = useState('');
@@ -96,7 +95,7 @@ export default function DashboardPage() {
   const [schedLunchEnd, setSchedLunchEnd] = useState('');
   const [schedDays, setSchedDays] = useState<number[]>([1, 2, 3, 4, 5, 6]); 
 
-  // Uploads e UI
+  // UI
   const [isUploadingProfile, setIsUploadingProfile] = useState(false);
   const [isUploadingBg, setIsUploadingBg] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
@@ -117,7 +116,7 @@ export default function DashboardPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Estatísticas Financeiras
+  // Stats Financeiros
   const financialStats = React.useMemo(() => {
       const upcomingApps = appointments; 
       return {
@@ -148,10 +147,9 @@ export default function DashboardPage() {
       );
   }, [allUsers, adminSearch]);
 
-  // --- CARREGAMENTO DE DADOS (CORRIGIDO) ---
+  // --- DATA FETCHING ---
 
   const fetchPageData = useCallback(async () => {
-    // Se adminViewId existir, usamos ele. Se não, usamos o user.uid
     const idToFetch = adminViewId || user?.uid; 
     
     if (idToFetch) {
@@ -160,7 +158,6 @@ export default function DashboardPage() {
           const result = await getPageDataForUser(idToFetch);
           
           if (result) {
-            // SUCESSO: Carrega os dados do usuário (seja eu ou o alvo)
             const data = result.data as PageData;
             if (data.links) data.links.sort((a, b) => (a.order || 0) - (b.order || 0));
             setPageData(data);
@@ -193,10 +190,9 @@ export default function DashboardPage() {
             } else setDaysLeft(null);
 
           } else {
-            // FALHA: Usuário existe mas não tem página (Zumbi)
             if (adminViewId) {
-                alert("⚠️ AVISO DO SISTEMA:\n\nEste usuário não possui uma página configurada corretamente (Cadastro incompleto ou antigo).\n\nNão é possível gerenciar.");
-                setAdminViewId(null); // Sai do modo admin automaticamente
+                alert("⚠️ AVISO DO SISTEMA:\n\nEste usuário não possui uma página configurada (Cadastro antigo).\nNão é possível gerenciar.");
+                setAdminViewId(null);
                 setActiveTab('agenda');
             }
           }
@@ -309,7 +305,6 @@ export default function DashboardPage() {
     if (!pageSlug || !newItemTitle) return;
     const current = pageData?.links || [];
     if (!isProPlan && current.length >= 8) return alert("Limite Free atingido.");
-    
     const exists = current.some(l => l.title === newItemTitle);
     if(exists) { alert("Já existe serviço com esse nome."); return; }
 
@@ -376,27 +371,23 @@ export default function DashboardPage() {
       <UpgradeModal isOpen={isUpgradeModalOpen} onClose={() => setIsUpgradeModalOpen(false)} />
       <FiscalModal isOpen={isFiscalModalOpen} onClose={() => setIsFiscalModalOpen(false)} onSave={() => {}} />
 
-      {/* HEADER PRINCIPAL */}
+      {/* HEADER */}
       <nav className="bg-white shadow-sm sticky top-0 z-20 px-4 h-16 flex justify-between items-center max-w-4xl mx-auto">
-         <h1 className="font-bold text-gray-800 flex gap-2 items-center"><FaUtensils className="text-orange-500"/> BarberPro</h1>
+         {/* ÍCONE CORRIGIDO PARA TESOURA (FaCut) */}
+         <h1 className="font-bold text-gray-800 flex gap-2 items-center"><FaCut className="text-orange-500"/> BarberPro</h1>
          <div className="flex gap-4">
              {pageSlug && <a href={`/${pageSlug}`} target="_blank" className="text-sm font-bold text-orange-600 hover:underline flex items-center gap-1"><FaExternalLinkAlt/> Ver Loja</a>}
              <button onClick={signOutUser} className="text-red-500 text-sm font-medium">Sair</button>
          </div>
       </nav>
 
-      {/* BANNER MODO SUPER ADMIN */}
+      {/* MODO SUPER ADMIN */}
       {adminViewId && (
           <div className="bg-red-600 text-white px-4 py-3 shadow-md flex justify-between items-center sticky top-16 z-30">
               <span className="font-bold flex items-center gap-2 text-sm md:text-base">
                   <FaMagic className="animate-pulse"/> MODO SUPER ADMIN: Editando {pageData?.title || 'Página do Usuário'}
               </span>
-              <button 
-                  onClick={handleExitAdminMode}
-                  className="bg-white text-red-600 text-xs font-bold px-4 py-2 rounded-full hover:bg-gray-100 flex items-center gap-2 shadow-lg transition active:scale-95"
-              >
-                  <FaArrowLeft/> Sair do Modo Edição
-              </button>
+              <button onClick={handleExitAdminMode} className="bg-white text-red-600 text-xs font-bold px-4 py-2 rounded-full hover:bg-gray-100 flex items-center gap-2 shadow-lg transition active:scale-95"><FaArrowLeft/> Sair do Modo Edição</button>
           </div>
       )}
 
@@ -521,7 +512,6 @@ export default function DashboardPage() {
         {isAdmin && !adminViewId && (
             <div className="mt-12 bg-gray-950 text-white p-6 rounded-xl border border-gray-800">
                 <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-orange-500"><FaCrown/> Painel Super Admin</h3>
-                
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-gray-800 text-gray-400 font-bold uppercase text-xs">
@@ -534,36 +524,35 @@ export default function DashboardPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-800">
-                            {allUsers.map((u) => (
-                                <tr key={u.uid} className="hover:bg-gray-800/50 transition">
-                                    <td className="p-3 text-gray-500 text-xs">
-                                        {u.createdAt?.seconds ? new Date(u.createdAt.seconds * 1000).toLocaleDateString() : '-'}
-                                    </td>
-                                    <td className="p-3 font-bold">{u.displayName || 'Sem Nome'}</td>
-                                    <td className="p-3 text-gray-400">{u.email}</td>
-                                    <td className="p-3">
-                                        <span className={`px-2 py-1 rounded text-xs font-bold ${u.plan === 'pro' ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-300'}`}>
-                                            {u.plan ? u.plan.toUpperCase() : 'FREE'}
-                                        </span>
-                                    </td>
-                                    <td className="p-3 text-right flex gap-2 justify-end">
-                                        <button 
-                                            onClick={() => handleAdminManage(u.uid)}
-                                            className="px-3 py-1 rounded text-xs font-bold bg-purple-600 text-white hover:bg-purple-500 flex items-center gap-1 transition"
-                                            title="Entrar na conta"
-                                        >
-                                            <FaStore/> Gerenciar
-                                        </button>
-
-                                        <button 
-                                            onClick={() => handleTogglePlan(u)} 
-                                            className={`px-3 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ${u.plan === 'pro' ? 'border-red-500 text-red-400 hover:bg-red-500/10' : 'border-green-500 text-green-400 hover:bg-green-500/10'}`}
-                                        >
-                                            {u.plan === 'pro' ? <><FaToggleOff/> Desativar</> : <><FaToggleOn/> Virar Pro</>}
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
+                            {allUsers.map((u) => {
+                                let trialEndStr = "";
+                                if(u.trialDeadline && u.plan !== 'pro') {
+                                    const d = new Date(u.trialDeadline.seconds * 1000);
+                                    trialEndStr = d.toLocaleDateString('pt-BR');
+                                }
+                                return (
+                                    <tr key={u.uid} className="hover:bg-gray-800/50 transition">
+                                        <td className="p-3 text-gray-500 text-xs">
+                                            {u.createdAt?.seconds ? new Date(u.createdAt.seconds * 1000).toLocaleDateString() : '-'}
+                                        </td>
+                                        <td className="p-3 font-bold">{u.displayName || 'Sem Nome'}</td>
+                                        <td className="p-3 text-gray-400">{u.email}</td>
+                                        <td className="p-3">
+                                            <div className="flex flex-col">
+                                                <span className={`px-2 py-1 rounded text-xs font-bold w-fit ${u.plan === 'pro' ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-300'}`}>
+                                                    {u.plan ? u.plan.toUpperCase() : 'FREE'}
+                                                </span>
+                                                {/* DATA VENCIMENTO */}
+                                                {trialEndStr && <span className="text-[10px] text-red-400 mt-1 flex items-center gap-1"><FaCalendarDay size={8}/> Vence: {trialEndStr}</span>}
+                                            </div>
+                                        </td>
+                                        <td className="p-3 text-right flex gap-2 justify-end">
+                                            <button onClick={() => handleAdminManage(u.uid)} className="px-3 py-1 rounded text-xs font-bold bg-purple-600 text-white hover:bg-purple-500 flex items-center gap-1 transition" title="Entrar na conta"><FaStore/> Gerenciar</button>
+                                            <button onClick={() => handleTogglePlan(u)} className={`px-3 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ${u.plan === 'pro' ? 'border-red-500 text-red-400 hover:bg-red-500/10' : 'border-green-500 text-green-400 hover:bg-green-500/10'}`}>{u.plan === 'pro' ? <><FaToggleOff/> Desativar</> : <><FaToggleOn/> Virar Pro</>}</button>
+                                        </td>
+                                    </tr>
+                                )
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -572,6 +561,18 @@ export default function DashboardPage() {
         )}
 
       </main>
+
+      {/* BOTÃO DE SUPORTE FLUTUANTE */}
+      <a
+        href="https://wa.me/5579996337995?text=Ola,%20estou%20no%20painel%20e%20preciso%20de%20ajuda%20com%20a%20configuracao"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 right-6 z-50 bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-2 transition-all transform hover:scale-105 font-bold"
+      >
+        <FaWhatsapp size={24} />
+        <span className="hidden md:inline">Suporte</span>
+      </a>
+
     </div>
   );
 }
