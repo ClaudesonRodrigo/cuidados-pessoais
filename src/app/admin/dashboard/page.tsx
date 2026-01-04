@@ -512,6 +512,7 @@ export default function DashboardPage() {
         {isAdmin && !adminViewId && (
             <div className="mt-12 bg-gray-950 text-white p-6 rounded-xl border border-gray-800">
                 <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-orange-500"><FaCrown/> Painel Super Admin</h3>
+                
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-gray-800 text-gray-400 font-bold uppercase text-xs">
@@ -547,8 +548,20 @@ export default function DashboardPage() {
                                             </div>
                                         </td>
                                         <td className="p-3 text-right flex gap-2 justify-end">
-                                            <button onClick={() => handleAdminManage(u.uid)} className="px-3 py-1 rounded text-xs font-bold bg-purple-600 text-white hover:bg-purple-500 flex items-center gap-1 transition" title="Entrar na conta"><FaStore/> Gerenciar</button>
-                                            <button onClick={() => handleTogglePlan(u)} className={`px-3 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ${u.plan === 'pro' ? 'border-red-500 text-red-400 hover:bg-red-500/10' : 'border-green-500 text-green-400 hover:bg-green-500/10'}`}>{u.plan === 'pro' ? <><FaToggleOff/> Desativar</> : <><FaToggleOn/> Virar Pro</>}</button>
+                                            <button 
+                                                onClick={() => handleAdminManage(u.uid)}
+                                                className="px-3 py-1 rounded text-xs font-bold bg-purple-600 text-white hover:bg-purple-500 flex items-center gap-1 transition"
+                                                title="Entrar na conta"
+                                            >
+                                                <FaStore/> Gerenciar
+                                            </button>
+
+                                            <button 
+                                                onClick={() => handleTogglePlan(u)} 
+                                                className={`px-3 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ${u.plan === 'pro' ? 'border-red-500 text-red-400 hover:bg-red-500/10' : 'border-green-500 text-green-400 hover:bg-green-500/10'}`}
+                                            >
+                                                {u.plan === 'pro' ? <><FaToggleOff/> Desativar</> : <><FaToggleOn/> Virar Pro</>}
+                                            </button>
                                         </td>
                                     </tr>
                                 )
