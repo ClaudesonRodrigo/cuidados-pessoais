@@ -7,12 +7,12 @@ import { signOutUser } from '@/lib/authService';
 import {
   getPageDataForUser, addLinkToPage, deleteLinkFromPage, updateLinksOnPage,
   updatePageTheme, updatePageBackground, updateProfileImage, updatePageProfileInfo, updatePageCoupons,
-  getAllUsers, getUpcomingAppointments, updateAppointmentStatus, updateUserPlan,
+  getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateAppointmentStatus, updateUserPlan,
   PageData, LinkData, CouponData, AppointmentData
 } from '@/lib/pageService';
 import { 
   FaUserCog, FaImage, FaSave, FaQrcode, FaTag, FaTrashAlt,
-  FaCut, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff, FaStar, FaBolt, FaStore, FaArrowLeft, FaMagic, FaCalendarDay, FaHeadset
+  FaCut, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff, FaStar, FaBolt, FaStore, FaArrowLeft, FaMagic, FaCalendarDay, FaHeadset, FaFileInvoiceDollar
 } from 'react-icons/fa';
 import Image from 'next/image';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -22,11 +22,11 @@ import { QRCodeCanvas } from 'qrcode.react';
 import FiscalModal from '@/components/FiscalModal';
 import { UpgradeModal } from '@/components/UpgradeModal';
 
-// Configurações Cloudinary
+// Configurações (Ambiente)
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
 
-// Templeid
+// Temas
 const themes = [
   { name: 'dark', label: 'Barber Dark', colorClass: 'bg-gray-900', isPro: false },
   { name: 'light', label: 'Clean', colorClass: 'bg-gray-100', isPro: false },
@@ -50,15 +50,21 @@ export default function DashboardPage() {
   // --- ESTADO DO SUPER ADMIN (Modo "Espião") ---
   const [adminViewId, setAdminViewId] = useState<string | null>(null);
 
-  // Agenda
+  // Agenda (Home)
   const [appointments, setAppointments] = useState<AppointmentData[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
+
+  // Financeiro / Histórico
+  const [financialStart, setFinancialStart] = useState('');
+  const [financialEnd, setFinancialEnd] = useState('');
+  const [financialData, setFinancialData] = useState<AppointmentData[]>([]);
+  const [isLoadingFinancial, setIsLoadingFinancial] = useState(false);
 
   // Modais
   const [isFiscalModalOpen, setIsFiscalModalOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); 
 
-  // Formulários
+  // Formulários Serviço
   const [newItemTitle, setNewItemTitle] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemDesc, setNewItemDesc] = useState('');
@@ -71,7 +77,7 @@ export default function DashboardPage() {
   const [newCouponValue, setNewCouponValue] = useState('');
   const [newCouponType, setNewCouponType] = useState<'percent' | 'fixed'>('percent');
 
-  // Edição
+  // Edição Serviço
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editItemTitle, setEditItemTitle] = useState('');
   const [editItemPrice, setEditItemPrice] = useState('');
@@ -116,8 +122,8 @@ export default function DashboardPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Stats Financeiros
-  const financialStats = React.useMemo(() => {
+  // Stats Financeiros (Agenda Futura)
+  const homeStats = React.useMemo(() => {
       const upcomingApps = appointments; 
       return {
           count: upcomingApps.length,
@@ -128,24 +134,17 @@ export default function DashboardPage() {
       };
   }, [appointments]);
 
-  // Estatísticas Admin
-  const adminStats = React.useMemo(() => {
-      if (!allUsers) return { total: 0, pro: 0, trial: 0 };
-      return {
-          total: allUsers.length,
-          pro: allUsers.filter(u => u.plan === 'pro').length,
-          trial: allUsers.filter(u => u.plan !== 'pro').length
-      };
-  }, [allUsers]);
-
-  const filteredUsers = React.useMemo(() => {
-      if (!adminSearch) return allUsers;
-      const lower = adminSearch.toLowerCase();
-      return allUsers.filter(u => 
-          (u.displayName && u.displayName.toLowerCase().includes(lower)) || 
-          (u.email && u.email.toLowerCase().includes(lower))
-      );
-  }, [allUsers, adminSearch]);
+  // Stats Relatório (Financeiro)
+  const reportStats = React.useMemo(() => {
+    const apps = financialData;
+    return {
+      totalRevenue: apps.filter(a => a.status === 'completed').reduce((acc, curr) => acc + (curr.totalValue || 0), 0),
+      pendingRevenue: apps.filter(a => ['pending', 'confirmed'].includes(a.status)).reduce((acc, curr) => acc + (curr.totalValue || 0), 0),
+      lostRevenue: apps.filter(a => a.status === 'cancelled').reduce((acc, curr) => acc + (curr.totalValue || 0), 0),
+      totalCount: apps.length,
+      completedCount: apps.filter(a => a.status === 'completed').length,
+    };
+  }, [financialData]);
 
   // --- DATA FETCHING ---
 
@@ -204,7 +203,7 @@ export default function DashboardPage() {
     }
   }, [user, adminViewId]); 
 
-  const fetchAppointments = useCallback(async () => {
+  const fetchUpcoming = useCallback(async () => {
       if (!pageSlug) return;
       setIsLoadingAppointments(true);
       try {
@@ -215,6 +214,30 @@ export default function DashboardPage() {
       }
       setIsLoadingAppointments(false);
   }, [pageSlug]);
+
+  // Função para buscar Financeiro/Histórico
+  const handleFetchFinancial = async () => {
+    if (!pageSlug || !financialStart || !financialEnd) return alert("Selecione data inicial e final");
+    setIsLoadingFinancial(true);
+    try {
+      // Ajusta datas para cobrir o dia inteiro (00:00 até 23:59)
+      const start = new Date(financialStart + 'T00:00:00');
+      const end = new Date(financialEnd + 'T23:59:59');
+      
+      const data = await getAppointmentsByDate(pageSlug, start, end);
+      // Ordena do mais recente para o mais antigo
+      data.sort((a,b) => {
+        const dA = (a.startAt as any).toDate ? (a.startAt as any).toDate() : new Date(a.startAt as any);
+        const dB = (b.startAt as any).toDate ? (b.startAt as any).toDate() : new Date(b.startAt as any);
+        return dB.getTime() - dA.getTime();
+      });
+      setFinancialData(data);
+    } catch (e) {
+      console.error("Erro financeiro:", e);
+      alert("Erro ao buscar relatório.");
+    }
+    setIsLoadingFinancial(false);
+  };
 
   useEffect(() => {
       if (user && isAdmin) {
@@ -232,7 +255,16 @@ export default function DashboardPage() {
 
   useEffect(() => { if (!loading && user) fetchPageData(); }, [user, loading, fetchPageData]);
   useEffect(() => { if (!loading && !user) router.push('/admin/login'); }, [user, loading, router]);
-  useEffect(() => { if (activeTab === 'agenda' && pageSlug) fetchAppointments(); }, [activeTab, pageSlug, fetchAppointments]);
+  useEffect(() => { if (activeTab === 'agenda' && pageSlug) fetchUpcoming(); }, [activeTab, pageSlug, fetchUpcoming]);
+
+  // Inicializa datas do financeiro com o mês atual
+  useEffect(() => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    setFinancialStart(firstDay.toISOString().split('T')[0]);
+    setFinancialEnd(lastDay.toISOString().split('T')[0]);
+  }, []);
 
   // --- HANDLERS ---
 
@@ -257,10 +289,11 @@ export default function DashboardPage() {
       setAllUsers(prev => prev.map(u => u.uid === targetUser.uid ? {...u, plan: newPlan} : u));
   };
 
-  const handleStatusChange = async (id: string, newStatus: 'confirmed' | 'cancelled' | 'completed') => {
+  const handleStatusChange = async (id: string, newStatus: 'confirmed' | 'cancelled' | 'completed', isFinancialTab = false) => {
       if(!confirm("Confirmar alteração de status?")) return;
       await updateAppointmentStatus(id, newStatus);
-      fetchAppointments();
+      if (isFinancialTab) handleFetchFinancial();
+      else fetchUpcoming();
   };
 
   const uploadToCloudinary = async (file: File) => {
@@ -373,7 +406,6 @@ export default function DashboardPage() {
 
       {/* HEADER */}
       <nav className="bg-white shadow-sm sticky top-0 z-20 px-4 h-16 flex justify-between items-center max-w-4xl mx-auto">
-         {/* ÍCONE CORRIGIDO PARA TESOURA (FaCut) */}
          <h1 className="font-bold text-gray-800 flex gap-2 items-center"><FaCut className="text-orange-500"/> BarberPro</h1>
          <div className="flex gap-4">
              {pageSlug && <a href={`/${pageSlug}`} target="_blank" className="text-sm font-bold text-orange-600 hover:underline flex items-center gap-1"><FaExternalLinkAlt/> Ver Loja</a>}
@@ -394,23 +426,24 @@ export default function DashboardPage() {
       <main className="max-w-4xl mx-auto py-6 px-4 space-y-6">
         
         {/* TABS */}
-        <div className="flex bg-gray-200 p-1 rounded-xl">
-            <button onClick={() => setActiveTab('agenda')} className={`flex-1 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'agenda' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaCalendarAlt/> Agenda</button>
-            <button onClick={() => setActiveTab('services')} className={`flex-1 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'services' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaList/> Serviços</button>
-            <button onClick={() => setActiveTab('profile')} className={`flex-1 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'profile' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaUserCog/> Perfil</button>
+        <div className="flex bg-gray-200 p-1 rounded-xl overflow-x-auto">
+            <button onClick={() => setActiveTab('agenda')} className={`flex-1 min-w-[100px] py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'agenda' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaCalendarAlt/> Agenda</button>
+            <button onClick={() => setActiveTab('financial')} className={`flex-1 min-w-[100px] py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'financial' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaFileInvoiceDollar/> Financeiro</button>
+            <button onClick={() => setActiveTab('services')} className={`flex-1 min-w-[100px] py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'services' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaList/> Serviços</button>
+            <button onClick={() => setActiveTab('profile')} className={`flex-1 min-w-[100px] py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition ${activeTab === 'profile' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}><FaUserCog/> Perfil</button>
         </div>
 
-        {/* AGENDA */}
+        {/* AGENDA (HOME) */}
         {activeTab === 'agenda' && (
             <div className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm"><div className="flex items-center gap-2 text-gray-400 text-xs font-bold uppercase mb-1"><FaChartLine/> Total Futuro</div><div className="text-2xl font-bold text-gray-800">R$ {financialStats.projected.toFixed(2)}</div></div>
-                    <div className="bg-white p-4 rounded-xl border-l-4 border-yellow-400 shadow-sm"><div className="flex items-center gap-2 text-yellow-600 text-xs font-bold uppercase mb-1"><FaHourglassHalf/> A Receber</div><div className="text-2xl font-bold text-gray-800">R$ {financialStats.pending.toFixed(2)}</div></div>
-                    <div className="bg-white p-4 rounded-xl border-l-4 border-blue-500 shadow-sm"><div className="flex items-center gap-2 text-blue-600 text-xs font-bold uppercase mb-1"><FaWallet/> Confirmado</div><div className="text-2xl font-bold text-gray-800">R$ {financialStats.confirmed.toFixed(2)}</div></div>
-                    <div className="bg-white p-4 rounded-xl border-l-4 border-green-500 shadow-sm"><div className="flex items-center gap-2 text-green-600 text-xs font-bold uppercase mb-1"><FaMoneyBillWave/> Realizado</div><div className="text-2xl font-bold text-gray-800">R$ {financialStats.completed.toFixed(2)}</div></div>
+                    <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm"><div className="flex items-center gap-2 text-gray-400 text-xs font-bold uppercase mb-1"><FaChartLine/> Total Futuro</div><div className="text-2xl font-bold text-gray-800">R$ {homeStats.projected.toFixed(2)}</div></div>
+                    <div className="bg-white p-4 rounded-xl border-l-4 border-yellow-400 shadow-sm"><div className="flex items-center gap-2 text-yellow-600 text-xs font-bold uppercase mb-1"><FaHourglassHalf/> A Receber</div><div className="text-2xl font-bold text-gray-800">R$ {homeStats.pending.toFixed(2)}</div></div>
+                    <div className="bg-white p-4 rounded-xl border-l-4 border-blue-500 shadow-sm"><div className="flex items-center gap-2 text-blue-600 text-xs font-bold uppercase mb-1"><FaWallet/> Confirmado</div><div className="text-2xl font-bold text-gray-800">R$ {homeStats.confirmed.toFixed(2)}</div></div>
+                    <div className="bg-white p-4 rounded-xl border-l-4 border-green-500 shadow-sm"><div className="flex items-center gap-2 text-green-600 text-xs font-bold uppercase mb-1"><FaMoneyBillWave/> Realizado</div><div className="text-2xl font-bold text-gray-800">R$ {homeStats.completed.toFixed(2)}</div></div>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[400px]">
-                    <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-gray-800 text-lg">Próximos Agendamentos</h3><button onClick={fetchAppointments} className="text-sm text-blue-600 hover:underline">Atualizar</button></div>
+                    <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-gray-800 text-lg">Próximos Agendamentos</h3><button onClick={fetchUpcoming} className="text-sm text-blue-600 hover:underline">Atualizar</button></div>
                     {isLoadingAppointments ? <div className="text-center py-10">Carregando...</div> : <div className="space-y-4">{appointments.length === 0 ? <p className="text-center text-gray-400 py-10">Agenda vazia.</p> : appointments.map(app => {
                         let start; try { start = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any); } catch { start = new Date(); }
                         return (
@@ -427,6 +460,107 @@ export default function DashboardPage() {
                     })}</div>}
                 </div>
             </div>
+        )}
+
+        {/* FINANCEIRO / RELATÓRIOS */}
+        {activeTab === 'financial' && (
+           <div className="space-y-6">
+              {/* Filtros */}
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-end">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">Data Inicial</label>
+                    <input type="date" value={financialStart} onChange={e => setFinancialStart(e.target.value)} className="border p-2 rounded text-sm outline-none focus:border-orange-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">Data Final</label>
+                    <input type="date" value={financialEnd} onChange={e => setFinancialEnd(e.target.value)} className="border p-2 rounded text-sm outline-none focus:border-orange-500" />
+                  </div>
+                  <button onClick={handleFetchFinancial} className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded font-bold h-[38px] flex items-center gap-2 transition">
+                    <FaSearch /> Filtrar Relatório
+                  </button>
+              </div>
+
+              {/* KPIs do Período */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                 <div className="bg-green-50 border border-green-200 p-4 rounded-xl">
+                    <div className="text-green-600 text-xs font-bold uppercase mb-1 flex items-center gap-2"><FaCheck/> Receita Realizada</div>
+                    <div className="text-2xl font-bold text-green-800">R$ {reportStats.totalRevenue.toFixed(2)}</div>
+                    <div className="text-xs text-green-600 mt-1">{reportStats.completedCount} atendimentos concluídos</div>
+                 </div>
+                 <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl">
+                    <div className="text-yellow-600 text-xs font-bold uppercase mb-1 flex items-center gap-2"><FaHourglassHalf/> Receita Pendente</div>
+                    <div className="text-2xl font-bold text-yellow-800">R$ {reportStats.pendingRevenue.toFixed(2)}</div>
+                    <div className="text-xs text-yellow-600 mt-1">Agendado ou Confirmado</div>
+                 </div>
+                 <div className="bg-red-50 border border-red-200 p-4 rounded-xl">
+                    <div className="text-red-600 text-xs font-bold uppercase mb-1 flex items-center gap-2"><FaTimes/> Receita Perdida</div>
+                    <div className="text-2xl font-bold text-red-800">R$ {reportStats.lostRevenue.toFixed(2)}</div>
+                    <div className="text-xs text-red-600 mt-1">Cancelamentos no período</div>
+                 </div>
+              </div>
+
+              {/* Listagem */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                  <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><FaList/> Extrato de Agendamentos</h3>
+                  
+                  {isLoadingFinancial ? (
+                    <div className="text-center py-10 text-gray-500">Buscando dados...</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                       {financialData.length === 0 ? (
+                         <div className="text-center py-8 text-gray-400">Nenhum agendamento encontrado neste período.</div>
+                       ) : (
+                         <table className="w-full text-sm text-left">
+                           <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-xs">
+                             <tr>
+                               <th className="p-3 rounded-l-lg">Data/Hora</th>
+                               <th className="p-3">Cliente</th>
+                               <th className="p-3">Serviço</th>
+                               <th className="p-3">Valor</th>
+                               <th className="p-3">Status</th>
+                               <th className="p-3 rounded-r-lg text-right">Ação</th>
+                             </tr>
+                           </thead>
+                           <tbody className="divide-y divide-gray-100">
+                             {financialData.map((app) => {
+                               let start; try { start = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any); } catch { start = new Date(); }
+                               return (
+                                 <tr key={app.id} className="hover:bg-gray-50">
+                                   <td className="p-3 font-medium text-gray-700">
+                                     {start.toLocaleDateString('pt-BR')} <br/> 
+                                     <span className="text-xs text-gray-400">{start.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</span>
+                                   </td>
+                                   <td className="p-3 font-bold text-gray-800">{app.customerName}<br/><span className="text-xs font-normal text-gray-400">{app.customerPhone}</span></td>
+                                   <td className="p-3 text-gray-600">{app.serviceName}</td>
+                                   <td className="p-3 font-bold text-gray-800">R$ {app.totalValue.toFixed(2)}</td>
+                                   <td className="p-3">
+                                      <span className={`px-2 py-1 rounded text-xs font-bold 
+                                        ${app.status==='completed'?'bg-green-100 text-green-700':
+                                          app.status==='cancelled'?'bg-red-100 text-red-700':
+                                          app.status==='confirmed'?'bg-blue-100 text-blue-700':'bg-yellow-100 text-yellow-700'}`}>
+                                        {app.status === 'completed' ? 'Concluído' : 
+                                         app.status === 'cancelled' ? 'Cancelado' : 
+                                         app.status === 'confirmed' ? 'Confirmado' : 'Pendente'}
+                                      </span>
+                                   </td>
+                                   <td className="p-3 text-right">
+                                     {app.status !== 'cancelled' && app.status !== 'completed' && (
+                                       <div className="flex justify-end gap-1">
+                                          <button onClick={() => handleStatusChange(app.id!, 'completed', true)} title="Concluir" className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded"><FaCheck/></button>
+                                          <button onClick={() => handleStatusChange(app.id!, 'cancelled', true)} title="Cancelar" className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded"><FaTimes/></button>
+                                       </div>
+                                     )}
+                                   </td>
+                                 </tr>
+                               )
+                             })}
+                           </tbody>
+                         </table>
+                       )}
+                    </div>
+                  )}
+              </div>
+           </div>
         )}
 
         {/* SERVIÇOS */}
