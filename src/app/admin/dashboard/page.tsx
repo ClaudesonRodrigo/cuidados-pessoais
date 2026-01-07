@@ -22,7 +22,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import FiscalModal from '@/components/FiscalModal';
 import { UpgradeModal } from '@/components/UpgradeModal';
 
-// Configurações (Ambiente)
+// Configurações Cloudinary
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
 
