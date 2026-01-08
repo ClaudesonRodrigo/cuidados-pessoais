@@ -8,27 +8,23 @@ export const generateAvailableSlots = (
 ): string[] => {
   const slots: string[] = [];
 
-  // --- 1. FILTRO DE DIA DA SEMANA (A MÁGICA NOVA) ---
-  // O método getDay() retorna: 0 (Domingo), 1 (Segunda) ... 6 (Sábado)
-  // Se existir configuração de dias (workingDays) e o dia atual NÃO estiver nela...
+  // --- 1. FILTRO DE DIA DA SEMANA ---
+  // Se a barbearia não abre neste dia da semana, retorna vazio.
   if (schedule?.workingDays && !schedule.workingDays.includes(date.getDay())) {
-      // ...Retorna lista vazia. A loja está fechada hoje.
       return []; 
   }
 
   // --- 2. CONFIGURAÇÕES BÁSICAS ---
-  // Se não tiver horário salvo, usa o padrão 09:00 as 19:00
   const openStr = schedule?.open || "09:00";
   const closeStr = schedule?.close || "19:00";
-  const interval = 30; // Intervalo fixo entre horários (pode virar config no futuro)
+  const interval = 30; // Intervalo de 30 em 30 min
 
-  // Converte strings "HH:mm" para números
   const [openH, openM] = openStr.split(':').map(Number);
   const [closeH, closeM] = closeStr.split(':').map(Number);
 
-  // Cria as datas de referência para Abertura e Fechamento do dia
+  // Define o horário de abertura e fechamento para o dia selecionado
   const baseDate = new Date(date);
-  baseDate.setHours(0, 0, 0, 0); // Zera hora para garantir
+  baseDate.setHours(0, 0, 0, 0);
 
   const shopOpen = new Date(baseDate);
   shopOpen.setHours(openH, openM, 0, 0);
@@ -51,44 +47,53 @@ export const generateAvailableSlots = (
       lunchEnd.setHours(lEndH, lEndM, 0, 0);
   }
 
-  // --- 4. LOOP GERADOR DE HORÁRIOS ---
-  // Começa no horário de abrir e vai somando de 30 em 30 min
+  // --- 4. REFERÊNCIA "AGORA" (Trava de Passado) ---
+  const now = new Date();
+  // Dica: Adicionamos um "buffer" de segurança? 
+  // Ex: Se for 13:05, o cliente não consegue mais pegar 13:00.
+  
+  // --- 5. LOOP GERADOR ---
   let currentSlot = new Date(shopOpen);
 
   while (currentSlot < shopClose) {
-      // Calcula quando esse atendimento terminaria
       const slotEnd = new Date(currentSlot.getTime() + durationMinutes * 60000);
 
       // Regra A: O atendimento não pode terminar depois que a loja fecha
       if (slotEnd > shopClose) {
-          break; // Para o loop
+          break;
       }
 
-      // Regra B: Colisão com o Almoço
+      // Regra B (NOVA): O horário já passou?
+      // Se o 'currentSlot' for menor que 'now', significa que é passado.
+      // O sistema vai pular esse horário.
+      if (currentSlot < now) {
+          currentSlot = new Date(currentSlot.getTime() + interval * 60000);
+          continue; // Pula para o próximo loop sem adicionar na lista
+      }
+
+      // Regra C: Colisão com o Almoço
       let isLunchTime = false;
       if (lunchStart && lunchEnd) {
-          // Se o horário cai dentro, começa dentro ou termina dentro do almoço
           if (
-              (currentSlot >= lunchStart && currentSlot < lunchEnd) || // Começa no almoço
-              (slotEnd > lunchStart && slotEnd <= lunchEnd) ||         // Termina no almoço
-              (currentSlot < lunchStart && slotEnd > lunchEnd)         // Atravessa o almoço
+              (currentSlot >= lunchStart && currentSlot < lunchEnd) || 
+              (slotEnd > lunchStart && slotEnd <= lunchEnd) ||         
+              (currentSlot < lunchStart && slotEnd > lunchEnd)         
           ) {
               isLunchTime = true;
           }
       }
 
-      // Se não for almoço, verifica se já tem cliente agendado (Colisão com Agenda)
+      // Regra D: Colisão com Agendamentos Existentes (Cliente 01 vs Cliente 02)
       if (!isLunchTime) {
           const isBusy = busyAppointments.some((app) => {
-            // Garante que startAt e endAt sejam objetos Date (Firestore Timestamp conversion)
             const appStart = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any);
             const appEnd = (app.endAt as any).toDate ? (app.endAt as any).toDate() : new Date(app.endAt as any);
             
-            // Lógica de colisão de intervalos
+            // Verifica se os horários se sobrepõem
             return currentSlot < appEnd && slotEnd > appStart;
           });
 
-          // Se estiver livre, adiciona na lista!
+          // Se passou por todas as regras, o horário é válido!
           if (!isBusy) {
             slots.push(currentSlot.toLocaleTimeString('pt-BR', {
               hour: '2-digit',
@@ -97,7 +102,7 @@ export const generateAvailableSlots = (
           }
       }
 
-      // Avança para o próximo slot (ex: 09:00 -> 09:30)
+      // Avança para o próximo intervalo
       currentSlot = new Date(currentSlot.getTime() + interval * 60000);
   }
 
