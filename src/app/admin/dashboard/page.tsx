@@ -462,7 +462,7 @@ export default function DashboardPage() {
             </div>
         )}
 
-        {/* FINANCEIRO / RELATÓRIOS */}
+        {/* FINANCEIRO & RELATÓRIOS */}
         {activeTab === 'financial' && (
            <div className="space-y-6">
               {/* Filtros */}
@@ -495,7 +495,7 @@ export default function DashboardPage() {
                  <div className="bg-red-50 border border-red-200 p-4 rounded-xl">
                     <div className="text-red-600 text-xs font-bold uppercase mb-1 flex items-center gap-2"><FaTimes/> Receita Perdida</div>
                     <div className="text-2xl font-bold text-red-800">R$ {reportStats.lostRevenue.toFixed(2)}</div>
-                    <div className="text-xs text-red-600 mt-1">Cancelamentos no período</div>
+                    <div className="text-xs text-red-600 mt-1">Cancelamentos no Período</div>
                  </div>
               </div>
 
