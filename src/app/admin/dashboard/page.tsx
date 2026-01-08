@@ -8,11 +8,12 @@ import {
   getPageDataForUser, addLinkToPage, deleteLinkFromPage, updateLinksOnPage,
   updatePageTheme, updatePageBackground, updateProfileImage, updatePageProfileInfo, updatePageCoupons,
   getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateAppointmentStatus, updateUserPlan,
+  addLoyaltyPoint,
   PageData, LinkData, CouponData, AppointmentData
 } from '@/lib/pageService';
 import { 
   FaUserCog, FaImage, FaSave, FaQrcode, FaTag, FaTrashAlt,
-  FaCut, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff, FaStar, FaBolt, FaStore, FaArrowLeft, FaMagic, FaCalendarDay, FaHeadset, FaFileInvoiceDollar
+  FaCut, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaUsers, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff, FaStar, FaBolt, FaStore, FaArrowLeft, FaMagic, FaCalendarDay, FaHeadset, FaFileInvoiceDollar, FaGift
 } from 'react-icons/fa';
 import Image from 'next/image';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -21,6 +22,7 @@ import { SortableLinkItem } from '@/components/SortableLinkItem';
 import { QRCodeCanvas } from 'qrcode.react';
 import FiscalModal from '@/components/FiscalModal';
 import { UpgradeModal } from '@/components/UpgradeModal';
+import { ActionModal } from '@/components/ActionModal'; // <--- NOVO IMPORT
 
 // Configurações (Ambiente)
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
@@ -47,8 +49,11 @@ export default function DashboardPage() {
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   
-  // --- ESTADO DO SUPER ADMIN (Modo "Espião") ---
+  // Super Admin
+  const SUPER_ADMIN_EMAILS = ["claudesonborges@gmail.com"];
+  const isAdmin = userData?.role === 'admin' || SUPER_ADMIN_EMAILS.includes(user?.email || "");
   const [adminViewId, setAdminViewId] = useState<string | null>(null);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
 
   // Agenda (Home)
   const [appointments, setAppointments] = useState<AppointmentData[]>([]);
@@ -60,9 +65,20 @@ export default function DashboardPage() {
   const [financialData, setFinancialData] = useState<AppointmentData[]>([]);
   const [isLoadingFinancial, setIsLoadingFinancial] = useState(false);
 
-  // Modais
+  // Modais e UI
   const [isFiscalModalOpen, setIsFiscalModalOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); 
+  
+  // --- SISTEMA DE TOAST E CONFIRMAÇÃO (NOVO) ---
+  const [toast, setToast] = useState<{msg: string, type: 'success'|'error'|'info'} | null>(null);
+  const [confirmData, setConfirmData] = useState<{
+     isOpen: boolean;
+     title: string;
+     desc: string;
+     action: () => void;
+     isDanger?: boolean;
+     confirmText?: string;
+  }>({ isOpen: false, title: '', desc: '', action: () => {} });
 
   // Formulários Serviço
   const [newItemTitle, setNewItemTitle] = useState('');
@@ -107,20 +123,20 @@ export default function DashboardPage() {
   const [showQRCode, setShowQRCode] = useState(false);
   const [copyButtonText, setCopyButtonText] = useState('Copiar Link');
 
-  // Super Admin
-  const isAdmin = userData?.role === 'admin';
-  const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [adminSearch, setAdminSearch] = useState('');
-
   // Helpers
   const isProPlan = (pageData?.plan === 'pro');
   const existingCategories = Array.from(new Set(pageData?.links?.map(l => l.category).filter(Boolean) || []));
 
-  // DnD Sensors
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+
+  // --- FUNÇÃO AUXILIAR DE TOAST ---
+  const showToast = (msg: string, type: 'success'|'error'|'info' = 'success') => {
+      setToast({ msg, type });
+      setTimeout(() => setToast(null), 3000); // Some depois de 3 seg
+  };
 
   // Stats Financeiros (Agenda Futura)
   const homeStats = React.useMemo(() => {
@@ -190,7 +206,7 @@ export default function DashboardPage() {
 
           } else {
             if (adminViewId) {
-                alert("⚠️ AVISO DO SISTEMA:\n\nEste usuário não possui uma página configurada (Cadastro antigo).\nNão é possível gerenciar.");
+                showToast("Usuário sem página configurada.", 'error');
                 setAdminViewId(null);
                 setActiveTab('agenda');
             }
@@ -215,17 +231,14 @@ export default function DashboardPage() {
       setIsLoadingAppointments(false);
   }, [pageSlug]);
 
-  // Função para buscar Financeiro/Histórico
   const handleFetchFinancial = async () => {
-    if (!pageSlug || !financialStart || !financialEnd) return alert("Selecione data inicial e final");
+    if (!pageSlug || !financialStart || !financialEnd) return showToast("Selecione data inicial e final", 'error');
     setIsLoadingFinancial(true);
     try {
-      // Ajusta datas para cobrir o dia inteiro (00:00 até 23:59)
       const start = new Date(financialStart + 'T00:00:00');
       const end = new Date(financialEnd + 'T23:59:59');
       
       const data = await getAppointmentsByDate(pageSlug, start, end);
-      // Ordena do mais recente para o mais antigo
       data.sort((a,b) => {
         const dA = (a.startAt as any).toDate ? (a.startAt as any).toDate() : new Date(a.startAt as any);
         const dB = (b.startAt as any).toDate ? (b.startAt as any).toDate() : new Date(b.startAt as any);
@@ -234,7 +247,7 @@ export default function DashboardPage() {
       setFinancialData(data);
     } catch (e) {
       console.error("Erro financeiro:", e);
-      alert("Erro ao buscar relatório.");
+      showToast("Erro ao buscar relatório.", 'error');
     }
     setIsLoadingFinancial(false);
   };
@@ -242,12 +255,16 @@ export default function DashboardPage() {
   useEffect(() => {
       if (user && isAdmin) {
           const fetchAll = async () => {
-              const users = await getAllUsers();
-              users.sort((a: any, b: any) => {
-                  if (b.createdAt && a.createdAt) return b.createdAt.seconds - a.createdAt.seconds;
-                  return 0;
-              });
-              setAllUsers(users);
+              try {
+                  const users = await getAllUsers();
+                  users.sort((a: any, b: any) => {
+                      if (b.createdAt && a.createdAt) return b.createdAt.seconds - a.createdAt.seconds;
+                      return 0;
+                  });
+                  setAllUsers(users);
+              } catch (error) {
+                  console.error("Erro ao listar usuários (Admin):", error);
+              }
           };
           fetchAll();
       }
@@ -257,7 +274,6 @@ export default function DashboardPage() {
   useEffect(() => { if (!loading && !user) router.push('/admin/login'); }, [user, loading, router]);
   useEffect(() => { if (activeTab === 'agenda' && pageSlug) fetchUpcoming(); }, [activeTab, pageSlug, fetchUpcoming]);
 
-  // Inicializa datas do financeiro com o mês atual
   useEffect(() => {
     const today = new Date();
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -266,34 +282,73 @@ export default function DashboardPage() {
     setFinancialEnd(lastDay.toISOString().split('T')[0]);
   }, []);
 
-  // --- HANDLERS ---
+  // --- HANDLERS COM MODAL ---
 
   const handleAdminManage = (targetUid: string) => {
-      if (confirm("Entrar no painel desta barbearia?")) {
-          setAdminViewId(targetUid);
-          setActiveTab('profile');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+      setConfirmData({
+          isOpen: true,
+          title: "Acessar Painel",
+          desc: "Você está prestes a entrar no painel deste usuário como Super Admin. Continuar?",
+          action: () => {
+            setAdminViewId(targetUid);
+            setActiveTab('profile');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
+      });
   };
 
   const handleExitAdminMode = () => {
       setAdminViewId(null);
       setActiveTab('agenda');
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      showToast("Modo Admin encerrado.", 'info');
   };
 
   const handleTogglePlan = async (targetUser: any) => {
-      if(!confirm(`Alterar plano de ${targetUser.email} para ${targetUser.plan === 'pro' ? 'FREE' : 'PRO'}?`)) return;
-      const newPlan = targetUser.plan === 'pro' ? 'free' : 'pro';
-      await updateUserPlan(targetUser.uid, newPlan);
-      setAllUsers(prev => prev.map(u => u.uid === targetUser.uid ? {...u, plan: newPlan} : u));
+      setConfirmData({
+          isOpen: true,
+          title: "Alterar Plano",
+          desc: `Deseja mudar o plano de ${targetUser.email} para ${targetUser.plan === 'pro' ? 'FREE' : 'PRO'}?`,
+          action: async () => {
+             const newPlan = targetUser.plan === 'pro' ? 'free' : 'pro';
+             await updateUserPlan(targetUser.uid, newPlan);
+             setAllUsers(prev => prev.map(u => u.uid === targetUser.uid ? {...u, plan: newPlan} : u));
+             showToast(`Plano alterado para ${newPlan.toUpperCase()}`);
+          }
+      });
   };
 
-  const handleStatusChange = async (id: string, newStatus: 'confirmed' | 'cancelled' | 'completed', isFinancialTab = false) => {
-      if(!confirm("Confirmar alteração de status?")) return;
-      await updateAppointmentStatus(id, newStatus);
-      if (isFinancialTab) handleFetchFinancial();
-      else fetchUpcoming();
+  const handleStatusChange = async (id: string, newStatus: 'confirmed' | 'cancelled' | 'completed', isFinancialTab = false, customerId?: string) => {
+      setConfirmData({
+          isOpen: true,
+          title: "Confirmar Alteração",
+          desc: `Deseja marcar este agendamento como ${newStatus === 'completed' ? 'CONCLUÍDO' : newStatus === 'cancelled' ? 'CANCELADO' : 'CONFIRMADO'}?`,
+          isDanger: newStatus === 'cancelled',
+          confirmText: "Sim, alterar",
+          action: async () => {
+              await updateAppointmentStatus(id, newStatus);
+              showToast("Status atualizado!");
+              
+              if (isFinancialTab) handleFetchFinancial();
+              else fetchUpcoming();
+
+              // TRIGGER FIDELIDADE (Encadeado)
+              if (newStatus === 'completed' && customerId && pageSlug) {
+                  setTimeout(() => {
+                     setConfirmData({
+                        isOpen: true,
+                        title: "🎟️ Cartão Fidelidade",
+                        desc: "Deseja adicionar 1 ponto no cartão de fidelidade deste cliente?",
+                        confirmText: "Pontuar",
+                        action: async () => {
+                            await addLoyaltyPoint(pageSlug, customerId);
+                            showToast("Ponto adicionado com sucesso!", 'success');
+                        }
+                     });
+                  }, 500);
+              }
+          }
+      });
   };
 
   const uploadToCloudinary = async (file: File) => {
@@ -337,9 +392,9 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!pageSlug || !newItemTitle) return;
     const current = pageData?.links || [];
-    if (!isProPlan && current.length >= 8) return alert("Limite Free atingido.");
+    if (!isProPlan && current.length >= 8) return showToast("Limite Free atingido. Vire PRO!", 'error');
     const exists = current.some(l => l.title === newItemTitle);
-    if(exists) { alert("Já existe serviço com esse nome."); return; }
+    if(exists) { showToast("Já existe serviço com esse nome.", 'error'); return; }
 
     const newItem: LinkData = { 
         title: newItemTitle, url: '', type: 'service', order: current.length + 1, clicks: 0, 
@@ -348,6 +403,7 @@ export default function DashboardPage() {
     };
     await addLinkToPage(pageSlug, newItem);
     setNewItemTitle(''); setNewItemPrice(''); setNewItemDesc(''); setNewItemImage(''); setNewItemCat(''); setNewItemDuration('30');
+    showToast("Serviço adicionado!", 'success');
     fetchPageData();
   };
 
@@ -356,7 +412,9 @@ export default function DashboardPage() {
     const updated = [...pageData.links];
     updated[index] = { ...updated[index], title: editItemTitle, price: editItemPrice, description: editItemDesc, imageUrl: editItemImage, category: editItemCat, durationMinutes: parseInt(editItemDuration)||30 };
     await updateLinksOnPage(pageSlug, updated);
-    setEditingIndex(null); fetchPageData();
+    setEditingIndex(null); 
+    showToast("Serviço atualizado!", 'success');
+    fetchPageData();
   };
 
   const toggleDay = (dayIndex: number) => {
@@ -368,7 +426,7 @@ export default function DashboardPage() {
       const whatsappToSave = editingProfileWhatsapp ? `55${editingProfileWhatsapp.replace(/\D/g, '')}` : '';
       const schedule = { open: schedOpen, close: schedClose, lunchStart: schedLunchStart, lunchEnd: schedLunchEnd, workingDays: schedDays };
       await updatePageProfileInfo(pageSlug, editingProfileTitle, editingProfileBio, isProPlan ? editingProfileAddress : '', isOpenStore, whatsappToSave, isProPlan ? editingProfilePix : '', schedule);
-      alert("Dados salvos com sucesso!");
+      showToast("Perfil salvo com sucesso!", 'success');
       fetchPageData();
   };
 
@@ -390,24 +448,70 @@ export default function DashboardPage() {
       setIsUploadingBg(false);
   };
   const handleAddCoupon = async () => {
-      if(!isProPlan || !pageSlug) return alert("Pro apenas.");
+      if(!isProPlan || !pageSlug) return showToast("Recurso exclusivo PRO.", 'info');
       const newC: CouponData = { code: newCouponCode.toUpperCase(), type: newCouponType, value: parseFloat(newCouponValue.replace(',','.')), active: true };
       const list = [...(pageData?.coupons||[]), newC];
       await updatePageCoupons(pageSlug, list);
       setPageData(prev => prev ? {...prev, coupons: list} : null);
+      showToast("Cupom criado!", 'success');
+  };
+
+  const handleDeleteItem = async (link: LinkData) => {
+     setConfirmData({
+         isOpen: true,
+         title: "Excluir Serviço",
+         desc: `Tem certeza que deseja apagar "${link.title}"?`,
+         isDanger: true,
+         confirmText: "Apagar",
+         action: async () => {
+             await deleteLinkFromPage(pageSlug!, link);
+             fetchPageData();
+             showToast("Serviço removido.", 'success');
+         }
+     })
   };
 
   if (loading || isLoadingData) return <div className="flex h-screen items-center justify-center text-orange-600 font-bold">Carregando Painel...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 font-sans">
+    <div className="min-h-screen bg-gray-50 pb-20 font-sans relative">
       <UpgradeModal isOpen={isUpgradeModalOpen} onClose={() => setIsUpgradeModalOpen(false)} />
       <FiscalModal isOpen={isFiscalModalOpen} onClose={() => setIsFiscalModalOpen(false)} onSave={() => {}} />
+      
+      {/* MODAL DE AÇÃO/CONFIRMAÇÃO */}
+      <ActionModal 
+        isOpen={confirmData.isOpen} 
+        onClose={() => setConfirmData(prev => ({...prev, isOpen: false}))} 
+        onConfirm={confirmData.action}
+        title={confirmData.title}
+        description={confirmData.desc}
+        isDanger={confirmData.isDanger}
+        confirmText={confirmData.confirmText}
+      />
+
+      {/* TOAST NOTIFICATION */}
+      {toast && (
+          <div className={`fixed top-4 right-4 z-[70] px-6 py-3 rounded-xl shadow-2xl text-white font-bold animate-fade-in-down flex items-center gap-2 ${
+              toast.type === 'error' ? 'bg-red-500' : toast.type === 'info' ? 'bg-blue-500' : 'bg-green-600'
+          }`}>
+              {toast.type === 'success' && <FaCheck />}
+              {toast.type === 'error' && <FaTimes />}
+              {toast.msg}
+          </div>
+      )}
 
       {/* HEADER */}
       <nav className="bg-white shadow-sm sticky top-0 z-20 px-4 h-16 flex justify-between items-center max-w-4xl mx-auto">
          <h1 className="font-bold text-gray-800 flex gap-2 items-center"><FaCut className="text-orange-500"/> BarberPro</h1>
-         <div className="flex gap-4">
+         <div className="flex gap-4 items-center">
+             {!isProPlan && (
+               <button 
+                 onClick={() => setIsUpgradeModalOpen(true)}
+                 className="hidden md:flex items-center gap-2 bg-gradient-to-r from-orange-500 to-red-600 text-white px-4 py-2 rounded-full text-xs font-bold hover:shadow-lg hover:scale-105 transition animate-pulse"
+               >
+                 <FaCrown className="text-yellow-300"/> Seja PRO
+               </button>
+             )}
              {pageSlug && <a href={`/${pageSlug}`} target="_blank" className="text-sm font-bold text-orange-600 hover:underline flex items-center gap-1"><FaExternalLinkAlt/> Ver Loja</a>}
              <button onClick={signOutUser} className="text-red-500 text-sm font-medium">Sair</button>
          </div>
@@ -452,7 +556,7 @@ export default function DashboardPage() {
                                 <div className="text-xs text-gray-500">{start.toLocaleDateString('pt-BR')} • {app.serviceName} • R$ {app.totalValue.toFixed(2)}</div>
                                 <div className="flex gap-2 mt-2">
                                     {app.status === 'pending' && <button onClick={() => handleStatusChange(app.id!, 'confirmed')} className="flex-1 bg-green-600 text-white p-2 rounded text-xs font-bold">Confirmar Pagto</button>}
-                                    {app.status === 'confirmed' && <button onClick={() => handleStatusChange(app.id!, 'completed')} className="flex-1 bg-blue-600 text-white p-2 rounded text-xs font-bold">Concluir</button>}
+                                    {app.status === 'confirmed' && <button onClick={() => handleStatusChange(app.id!, 'completed', false, app.customerId)} className="flex-1 bg-blue-600 text-white p-2 rounded text-xs font-bold">Concluir</button>}
                                     {app.status !== 'cancelled' && <button onClick={() => handleStatusChange(app.id!, 'cancelled')} className="bg-white border border-red-300 text-red-500 p-2 rounded text-xs font-bold">Cancelar</button>}
                                 </div>
                             </div>
@@ -462,7 +566,7 @@ export default function DashboardPage() {
             </div>
         )}
 
-        {/* FINANCEIRO & RELATÓRIOS */}
+        {/* FINANCEIRO / RELATÓRIOS */}
         {activeTab === 'financial' && (
            <div className="space-y-6">
               {/* Filtros */}
@@ -495,7 +599,7 @@ export default function DashboardPage() {
                  <div className="bg-red-50 border border-red-200 p-4 rounded-xl">
                     <div className="text-red-600 text-xs font-bold uppercase mb-1 flex items-center gap-2"><FaTimes/> Receita Perdida</div>
                     <div className="text-2xl font-bold text-red-800">R$ {reportStats.lostRevenue.toFixed(2)}</div>
-                    <div className="text-xs text-red-600 mt-1">Cancelamentos no Período</div>
+                    <div className="text-xs text-red-600 mt-1">Cancelamentos no período</div>
                  </div>
               </div>
 
@@ -546,7 +650,7 @@ export default function DashboardPage() {
                                    <td className="p-3 text-right">
                                      {app.status !== 'cancelled' && app.status !== 'completed' && (
                                        <div className="flex justify-end gap-1">
-                                          <button onClick={() => handleStatusChange(app.id!, 'completed', true)} title="Concluir" className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded"><FaCheck/></button>
+                                          <button onClick={() => handleStatusChange(app.id!, 'completed', true, app.customerId)} title="Concluir" className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded"><FaCheck/></button>
                                           <button onClick={() => handleStatusChange(app.id!, 'cancelled', true)} title="Cancelar" className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded"><FaTimes/></button>
                                        </div>
                                      )}
@@ -566,6 +670,17 @@ export default function DashboardPage() {
         {/* SERVIÇOS */}
         {activeTab === 'services' && (
              <div className="space-y-6">
+                 {/* CARD DE UPGRADE NO PERFIL */}
+                 {!isProPlan && (
+                     <div onClick={() => setIsUpgradeModalOpen(true)} className="bg-gray-900 text-white p-4 rounded-xl shadow-lg cursor-pointer border border-orange-500/30 flex justify-between items-center">
+                         <div>
+                            <h3 className="font-bold text-orange-400 flex items-center gap-2"><FaCrown/> Plano Gratuito</h3>
+                            <p className="text-xs text-gray-400">Toque para desbloquear recursos VIP</p>
+                         </div>
+                         <button className="bg-orange-600 px-3 py-1 rounded text-xs font-bold">Ver Planos</button>
+                     </div>
+                 )}
+
                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                      <h3 className="font-bold text-gray-800 mb-4 flex gap-2 items-center"><FaPlus className="text-green-500"/> Novo Serviço</h3>
                      <form onSubmit={handleAddItem} className="space-y-4">
@@ -595,7 +710,7 @@ export default function DashboardPage() {
                                          <div className="flex justify-end gap-2"><button onClick={()=>setEditingIndex(null)} className="px-3 py-1 bg-white border rounded text-xs">Cancelar</button><button onClick={()=>handleUpdateItem(index)} className="px-3 py-1 bg-green-600 text-white rounded text-xs">Salvar</button></div>
                                      </div>
                                  );
-                                 return <SortableLinkItem key={uniqueId} id={uniqueId} link={link} index={index} onEdit={()=>{setEditingIndex(index); setEditItemTitle(link.title); setEditItemPrice(link.price||''); setEditItemDuration(String(link.durationMinutes||30)); setEditItemCat(link.category||''); setEditItemImage(link.imageUrl||'');}} onDelete={async()=>{if(confirm("Excluir?")){await deleteLinkFromPage(pageSlug!, link); fetchPageData();}}} editingIndex={editingIndex} />
+                                 return <SortableLinkItem key={uniqueId} id={uniqueId} link={link} index={index} onEdit={()=>{setEditingIndex(index); setEditItemTitle(link.title); setEditItemPrice(link.price||''); setEditItemDuration(String(link.durationMinutes||30)); setEditItemCat(link.category||''); setEditItemImage(link.imageUrl||'');}} onDelete={() => handleDeleteItem(link)} editingIndex={editingIndex} />
                              })}
                          </div>
                      </SortableContext>
@@ -607,6 +722,17 @@ export default function DashboardPage() {
         {/* PERFIL */}
         {activeTab === 'profile' && (
              <div className="space-y-6">
+                 {/* CARD DE UPGRADE NO PERFIL */}
+                 {!isProPlan && (
+                     <div onClick={() => setIsUpgradeModalOpen(true)} className="bg-gray-900 text-white p-4 rounded-xl shadow-lg cursor-pointer border border-orange-500/30 flex justify-between items-center">
+                         <div>
+                            <h3 className="font-bold text-orange-400 flex items-center gap-2"><FaCrown/> Plano Gratuito</h3>
+                            <p className="text-xs text-gray-400">Toque para desbloquear recursos VIP</p>
+                         </div>
+                         <button className="bg-orange-600 px-3 py-1 rounded text-xs font-bold">Ver Planos</button>
+                     </div>
+                 )}
+
                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6 items-start">
                      <div className="relative w-24 h-24 shrink-0 mx-auto md:mx-0">
                          <div className="w-full h-full rounded-full overflow-hidden border-4 border-gray-100 relative bg-gray-200">

@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
-        hostname: "lh3.googleusercontent.com", // Para fotos de perfil do Google
+        hostname: "*.googleusercontent.com", // O asterisco (*) libera lh3, lh4, lh5...
       },
     ],
   },

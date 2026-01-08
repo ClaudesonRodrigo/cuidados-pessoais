@@ -357,3 +357,68 @@ export const updateUserFiscalData = async (userId: string, cpfCnpj: string, phon
   const userRef = doc(db, "users", userId);
   await updateDoc(userRef, { cpfCnpj, phone });
 };
+
+// --- FIDELIDADE (NOVO) ---
+
+export type LoyaltyData = {
+  points: number;       // Quantos selos ele tem agora (ex: 4)
+  totalRewards: number; // Quantos cartões já completou (ex: 1)
+  lastUpdated: any;
+};
+
+// Busca os pontos de um cliente específico nessa barbearia
+export const getCustomerLoyalty = async (pageSlug: string, customerId: string): Promise<LoyaltyData> => {
+  try {
+    const docId = `${pageSlug}_${customerId}`; // ID único composto
+    const docRef = doc(db, "loyalty", docId);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      return docSnap.data() as LoyaltyData;
+    }
+    return { points: 0, totalRewards: 0, lastUpdated: null };
+  } catch (error) {
+    console.error("Erro ao buscar fidelidade:", error);
+    return { points: 0, totalRewards: 0, lastUpdated: null };
+  }
+};
+
+// Adiciona 1 ponto. Se chegar a 10, zera e dá 1 recompensa.
+export const addLoyaltyPoint = async (pageSlug: string, customerId: string): Promise<void> => {
+  try {
+    const docId = `${pageSlug}_${customerId}`;
+    const docRef = doc(db, "loyalty", docId);
+    const docSnap = await getDoc(docRef);
+    
+    let currentPoints = 0;
+    let currentRewards = 0;
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      currentPoints = data.points || 0;
+      currentRewards = data.totalRewards || 0;
+    }
+
+    // Lógica do Cartão (10 Pontos)
+    let newPoints = currentPoints + 1;
+    let newRewards = currentRewards;
+
+    if (newPoints >= 10) {
+      newPoints = 0; // Zera o cartão
+      newRewards += 1; // Ganhou um prêmio
+    }
+
+    // Salva (com merge para criar se não existir)
+    const { setDoc } = await import("firebase/firestore"); // Import dinâmico pra garantir
+    await setDoc(docRef, {
+      points: newPoints,
+      totalRewards: newRewards,
+      lastUpdated: Timestamp.now(),
+      pageSlug,
+      customerId
+    }, { merge: true });
+
+  } catch (error) {
+    console.error("Erro ao pontuar fidelidade:", error);
+  }
+};

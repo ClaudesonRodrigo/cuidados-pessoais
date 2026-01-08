@@ -5,7 +5,8 @@ import { useAuth } from '@/context/AuthContext';
 import { signInWithGoogle, signOutUser } from '@/lib/authService';
 import { 
   getPageDataBySlug, getAppointmentsByDate, createAppointment, getAppointmentsByCustomer,
-  PageData, LinkData, AppointmentData, ScheduleData 
+  PageData, LinkData, AppointmentData, ScheduleData,
+  getCustomerLoyalty, LoyaltyData // <--- IMPORT NOVO DA FIDELIDADE
 } from "@/lib/pageService";
 import { generateAvailableSlots } from '@/lib/availability';
 import { Timestamp } from 'firebase/firestore'; 
@@ -17,6 +18,7 @@ import {
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeCanvas } from 'qrcode.react';
+import { LoyaltyCard } from '@/components/LoyaltyCard'; // <--- IMPORT DO COMPONENTE NOVO
 
 // --- TIPOS ---
 interface ExtendedPageData extends PageData {
@@ -102,6 +104,9 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [historyApps, setHistoryApps] = useState<AppointmentData[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // --- FIDELIDADE (NOVO ESTADO) ---
+  const [loyaltyData, setLoyaltyData] = useState<LoyaltyData | null>(null);
+
   // Cálculos
   const totalDuration = cart.reduce((acc, item) => acc + (item.durationMinutes || 30), 0);
   const totalPrice = cart.reduce((acc, item) => acc + parseFloat(item.price?.replace(',','.') || '0'), 0);
@@ -109,7 +114,12 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   // Auto-preencher nome se logado
   useEffect(() => {
       if (user?.displayName) setCustomerName(user.displayName);
-  }, [user]);
+      
+      // --- CARREGAR FIDELIDADE SE LOGADO ---
+      if (user && resolvedParams.slug) {
+         getCustomerLoyalty(resolvedParams.slug, user.uid).then(setLoyaltyData);
+      }
+  }, [user, resolvedParams.slug]);
 
   // Carregar Dados da Página
   useEffect(() => {
@@ -263,19 +273,19 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
       {/* HEADER */}
       <header className="pt-6 pb-6 px-4 relative max-w-lg mx-auto">
         <div className="flex justify-between items-center mb-6">
-             {/* LOGIN/PERFIL */}
-             {user ? (
-                 <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10 hover:bg-white/10 transition cursor-pointer" onClick={handleOpenHistory}>
-                     {user.photoURL ? <img src={user.photoURL} className="w-6 h-6 rounded-full border border-white/20" alt="avatar"/> : <div className="w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center text-xs font-bold text-white">{user.displayName?.charAt(0)}</div>}
-                     <span className="text-xs font-bold text-gray-300">Meus Cortes</span>
-                 </div>
-             ) : (
-                 <button onClick={handleLogin} className="text-xs font-bold bg-white text-gray-900 px-4 py-2 rounded-full hover:bg-gray-200 flex items-center gap-2 shadow-lg shadow-white/5 transition">
-                     <FaGoogle/> Entrar
-                 </button>
-             )}
+              {/* LOGIN/PERFIL */}
+              {user ? (
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10 hover:bg-white/10 transition cursor-pointer" onClick={handleOpenHistory}>
+                      {user.photoURL ? <img src={user.photoURL} className="w-6 h-6 rounded-full border border-white/20" alt="avatar"/> : <div className="w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center text-xs font-bold text-white">{user.displayName?.charAt(0)}</div>}
+                      <span className="text-xs font-bold text-gray-300">Meus Cortes</span>
+                  </div>
+              ) : (
+                  <button onClick={handleLogin} className="text-xs font-bold bg-white text-gray-900 px-4 py-2 rounded-full hover:bg-gray-200 flex items-center gap-2 shadow-lg shadow-white/5 transition">
+                      <FaGoogle/> Entrar
+                  </button>
+              )}
 
-             {user && <button onClick={signOutUser} className="text-gray-500 hover:text-white transition"><FaSignOutAlt/></button>}
+              {user && <button onClick={signOutUser} className="text-gray-500 hover:text-white transition"><FaSignOutAlt/></button>}
         </div>
 
         <div className="text-center">
@@ -284,6 +294,18 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
             </div>
             <h1 className="text-2xl font-bold mb-2 text-white">{pageData.title}</h1>
             <p className="text-gray-400 text-sm max-w-xs mx-auto leading-relaxed">{pageData.bio}</p>
+            
+            {/* --- CARTÃO FIDELIDADE (INSERIDO AQUI) --- */}
+            {user && loyaltyData && (
+                <div className="mt-6 mb-2 animate-fade-in-up">
+                    <LoyaltyCard 
+                        points={loyaltyData.points} 
+                        rewards={loyaltyData.totalRewards} 
+                        customerName={user.displayName?.split(' ')[0] || 'Cliente VIP'} 
+                    />
+                </div>
+            )}
+
             {isClosed ? (
                 <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold px-4 py-2 rounded-full inline-flex items-center gap-2 mt-4"><FaStoreSlash/> LOJA FECHADA</div>
             ) : (
@@ -384,13 +406,13 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                                         key={day.fullDate} 
                                         disabled={!isOpenDay} // Desabilita clique
                                         onClick={() => setSelectedDate(day.fullDate)}
-                                        className={`flex-shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center gap-1 transition-all border snap-center ${
+                                        className={`shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center gap-1 transition-all border snap-center ${
                                             !isOpenDay 
                                             ? 'bg-gray-900 border-gray-800 opacity-30 cursor-not-allowed grayscale' // Estilo Bloqueado
                                             : isSelected 
                                                 ? 'bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-900/50 scale-105' 
                                                 : 'bg-gray-900 border-gray-800 text-gray-400 hover:border-gray-600 hover:bg-gray-800'
-                                        }`}
+                                    }`}
                                     >
                                         <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">{day.dayName}</span>
                                         <span className="text-xl font-bold">
@@ -520,7 +542,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                                 {/* PIX AREA */}
                                 {hasPix ? (
                                     <div className="bg-gray-800 p-4 rounded-xl text-center border border-dashed border-gray-600 relative overflow-hidden">
-                                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
+                                        <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-blue-500 to-purple-500"></div>
                                         <p className="text-white font-bold text-sm mb-4 flex justify-center items-center gap-2"><FaQrcode className="text-blue-400"/> Pagamento via Pix</p>
                                         <div className="bg-white p-3 rounded-lg inline-block mb-4 shadow-xl">
                                             <QRCodeCanvas value={pageData.pixKey!} size={130} />
