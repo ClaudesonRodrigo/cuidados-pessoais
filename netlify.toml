@@ -3,7 +3,7 @@
   command = "npm run build"
   publish = ".next"
 
-# Garante que o plugin do Next.js seja usado (essencial para SSR/API Routes)
+# Garante que o plugin do Next.js seja usado
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
@@ -14,11 +14,16 @@
   port = 8888
   autoLaunch = false
 
-# (Opcional) Configurações específicas para a branch develop
-# Isso cria um ambiente "Staging"
+# --- A MÁGICA ACONTECE AQUI ---
+# Configurações ESPECÍFICAS para a branch 'develop'
 [context.develop]
   command = "npm run build"
-  
-# (Opcional) Variáveis de ambiente específicas para develop se precisar
-# [context.develop.environment]
-#   NEXT_PUBLIC_API_URL = "https://api-dev.exemplo.com"
+
+# Aqui nós "ligamos" o modo DEV.
+# O Netlify vai injetar essa variável apenas quando estiver na branch develop.
+[context.develop.environment]
+  NEXT_PUBLIC_USE_DEV_DB = "true"
+
+# (Opcional) Garante também para Deploy Previews (Pull Requests)
+[context.deploy-preview.environment]
+  NEXT_PUBLIC_USE_DEV_DB = "true"
