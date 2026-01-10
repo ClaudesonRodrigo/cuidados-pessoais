@@ -2,21 +2,11 @@
 
 import {
   doc, getDoc, updateDoc, arrayUnion, arrayRemove, DocumentData,
-  collection, query, where, getDocs, orderBy, limit, Timestamp, addDoc, deleteDoc
+  collection, query, where, getDocs, orderBy, limit, Timestamp, addDoc, deleteDoc, setDoc
 } from "firebase/firestore";
 import { db } from "./firebaseClient";
 
 // --- TIPOS ---
-export type TransactionData = {
-  id?: string;
-  pageSlug: string;
-  type: 'income' | 'expense';
-  description: string;
-  value: number;
-  category: string;
-  date: Timestamp;
-  createdAt: any;
-};
 
 export type LinkData = {
   title: string;
@@ -99,19 +89,19 @@ export type UserData = {
   createdAt?: any;    
 };
 
-// NOVO: Tipo para Transações (PDV)
+// TIPO DE TRANSAÇÃO (Apenas uma vez aqui!)
 export type TransactionData = {
   id?: string;
   pageSlug: string;
-  type: 'income' | 'expense'; // Entrada ou Saída
+  type: 'income' | 'expense';
   description: string;
   value: number;
-  category: string; 
+  category: string;
   date: Timestamp;
   createdAt: any;
 };
 
-// FUNÇÃO AUXILIAR
+// --- FUNÇÃO AUXILIAR ---
 const checkPlanValidity = (data: any) => {
     if (data.plan === 'pro' && data.trialDeadline) {
         const now = new Date();
@@ -424,8 +414,8 @@ export const addLoyaltyPoint = async (pageSlug: string, customerId: string): Pro
       newPoints = 0; 
       newRewards += 1; 
     }
-
-    const { setDoc } = await import("firebase/firestore"); 
+    
+    // Importação dinâmica removida. Usando setDoc direto.
     await setDoc(docRef, {
       points: newPoints,
       totalRewards: newRewards,
@@ -439,7 +429,7 @@ export const addLoyaltyPoint = async (pageSlug: string, customerId: string): Pro
   }
 };
 
-// --- FINANCEIRO PDV (NOVO) ---
+// --- FINANCEIRO PDV ---
 
 export const addTransaction = async (data: TransactionData): Promise<void> => {
   try {
