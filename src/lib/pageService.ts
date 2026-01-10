@@ -2,7 +2,7 @@
 
 import {
   doc, getDoc, updateDoc, arrayUnion, arrayRemove, DocumentData,
-  collection, query, where, getDocs, orderBy, limit, Timestamp, addDoc
+  collection, query, where, getDocs, orderBy, limit, Timestamp, addDoc, deleteDoc
 } from "firebase/firestore";
 import { db } from "./firebaseClient";
 
@@ -31,13 +31,12 @@ export type CouponData = {
   active: boolean;    
 };
 
-// NOVO: Estrutura de Horários
 export type ScheduleData = {
-    open: string;       // "09:00"
-    close: string;      // "19:00"
-    lunchStart?: string; // "12:00"
-    lunchEnd?: string;   // "13:00"
-    workingDays?: number[]; // [1,2,3,4,5,6] (Seg-Sab) - Futuro
+    open: string;       
+    close: string;      
+    lunchStart?: string; 
+    lunchEnd?: string;   
+    workingDays?: number[]; 
 };
 
 export type PageData = {
@@ -56,7 +55,7 @@ export type PageData = {
   plan?: string;
   trialDeadline?: Timestamp;
   isOpen?: boolean;
-  schedule?: ScheduleData; // NOVO CAMPO
+  schedule?: ScheduleData;
   createdAt?: any;
 };
 
@@ -88,6 +87,18 @@ export type UserData = {
   cpfCnpj?: string;   
   phone?: string;     
   createdAt?: any;    
+};
+
+// NOVO: Tipo para Transações (PDV)
+export type TransactionData = {
+  id?: string;
+  pageSlug: string;
+  type: 'income' | 'expense'; // Entrada ou Saída
+  description: string;
+  value: number;
+  category: string; 
+  date: Timestamp;
+  createdAt: any;
 };
 
 // FUNÇÃO AUXILIAR
@@ -306,11 +317,10 @@ export const updateProfileImage = async (pageSlug: string, imageUrl: string): Pr
   await updateDoc(doc(db, "pages", pageSlug), { profileImageUrl: imageUrl });
 };
 
-// ATUALIZADO: Aceita o objeto 'schedule'
 export const updatePageProfileInfo = async (
     pageSlug: string, title: string, bio: string, address: string, 
     isOpen: boolean, whatsapp: string, pixKey: string,
-    schedule?: ScheduleData // Novo Parâmetro
+    schedule?: ScheduleData
 ): Promise<void> => {
   const dataToUpdate: any = { title, bio, address, isOpen, whatsapp, pixKey: pixKey || "" };
   if (schedule) dataToUpdate.schedule = schedule;
@@ -358,18 +368,17 @@ export const updateUserFiscalData = async (userId: string, cpfCnpj: string, phon
   await updateDoc(userRef, { cpfCnpj, phone });
 };
 
-// --- FIDELIDADE (NOVO) ---
+// --- FIDELIDADE ---
 
 export type LoyaltyData = {
-  points: number;       // Quantos selos ele tem agora (ex: 4)
-  totalRewards: number; // Quantos cartões já completou (ex: 1)
+  points: number;       
+  totalRewards: number; 
   lastUpdated: any;
 };
 
-// Busca os pontos de um cliente específico nessa barbearia
 export const getCustomerLoyalty = async (pageSlug: string, customerId: string): Promise<LoyaltyData> => {
   try {
-    const docId = `${pageSlug}_${customerId}`; // ID único composto
+    const docId = `${pageSlug}_${customerId}`; 
     const docRef = doc(db, "loyalty", docId);
     const docSnap = await getDoc(docRef);
     
@@ -383,7 +392,6 @@ export const getCustomerLoyalty = async (pageSlug: string, customerId: string): 
   }
 };
 
-// Adiciona 1 ponto. Se chegar a 10, zera e dá 1 recompensa.
 export const addLoyaltyPoint = async (pageSlug: string, customerId: string): Promise<void> => {
   try {
     const docId = `${pageSlug}_${customerId}`;
@@ -399,17 +407,15 @@ export const addLoyaltyPoint = async (pageSlug: string, customerId: string): Pro
       currentRewards = data.totalRewards || 0;
     }
 
-    // Lógica do Cartão (10 Pontos)
     let newPoints = currentPoints + 1;
     let newRewards = currentRewards;
 
     if (newPoints >= 10) {
-      newPoints = 0; // Zera o cartão
-      newRewards += 1; // Ganhou um prêmio
+      newPoints = 0; 
+      newRewards += 1; 
     }
 
-    // Salva (com merge para criar se não existir)
-    const { setDoc } = await import("firebase/firestore"); // Import dinâmico pra garantir
+    const { setDoc } = await import("firebase/firestore"); 
     await setDoc(docRef, {
       points: newPoints,
       totalRewards: newRewards,
@@ -421,4 +427,38 @@ export const addLoyaltyPoint = async (pageSlug: string, customerId: string): Pro
   } catch (error) {
     console.error("Erro ao pontuar fidelidade:", error);
   }
+};
+
+// --- FINANCEIRO PDV (NOVO) ---
+
+export const addTransaction = async (data: TransactionData): Promise<void> => {
+  try {
+    await addDoc(collection(db, "transactions"), {
+      ...data,
+      createdAt: Timestamp.now()
+    });
+  } catch (error) {
+    console.error("Erro ao criar transação:", error);
+    throw error;
+  }
+};
+
+export const getTransactionsByDate = async (pageSlug: string, dateStart: Date, dateEnd: Date): Promise<TransactionData[]> => {
+  try {
+    const q = query(
+      collection(db, "transactions"),
+      where("pageSlug", "==", pageSlug),
+      where("date", ">=", Timestamp.fromDate(dateStart)),
+      where("date", "<=", Timestamp.fromDate(dateEnd))
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TransactionData));
+  } catch (error) {
+    console.error("Erro ao buscar transações:", error);
+    return [];
+  }
+};
+
+export const deleteTransaction = async (id: string): Promise<void> => {
+  await deleteDoc(doc(db, "transactions", id));
 };
