@@ -7,6 +7,16 @@ import {
 import { db } from "./firebaseClient";
 
 // --- TIPOS ---
+export type TransactionData = {
+  id?: string;
+  pageSlug: string;
+  type: 'income' | 'expense';
+  description: string;
+  value: number;
+  category: string;
+  date: Timestamp;
+  createdAt: any;
+};
 
 export type LinkData = {
   title: string;
