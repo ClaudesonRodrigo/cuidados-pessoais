@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { 
   FaCut, FaCalendarAlt, FaWhatsapp, FaCheck, FaRocket, FaMobileAlt, 
-  FaMoneyBillWave, FaArrowRight, FaStar, FaQuestionCircle, FaChevronDown, FaLock, FaBolt, FaUserTie
+  FaMoneyBillWave, FaArrowRight, FaStar, FaQuestionCircle, FaChevronDown, FaLock, FaBolt, FaUserTie, FaPlay
 } from 'react-icons/fa';
 
 // --- COMPONENTES VISUAIS (MOCKUPS CSS) ---
@@ -179,8 +179,8 @@ export default function Home() {
               <Link href="/admin/login" className="bg-orange-600 hover:bg-orange-700 text-white text-lg font-bold px-8 py-4 rounded-2xl shadow-xl shadow-orange-900/40 transition transform hover:-translate-y-1 flex items-center justify-center gap-3">
                 Criar Minha Agenda <FaArrowRight />
               </Link>
-              <Link href="#como-funciona" className="bg-gray-800 hover:bg-gray-700 text-gray-200 text-lg font-bold px-8 py-4 rounded-2xl border border-gray-700 transition flex items-center justify-center gap-2">
-                <FaBolt className="text-yellow-400"/> Ver Funcionalidades
+              <Link href="#video-demo" className="bg-gray-800 hover:bg-gray-700 text-gray-200 text-lg font-bold px-8 py-4 rounded-2xl border border-gray-700 transition flex items-center justify-center gap-2">
+                <FaPlay className="text-white text-xs"/> Ver Vídeo
               </Link>
             </motion.div>
 
@@ -204,8 +204,39 @@ export default function Home() {
         </div>
       </header>
 
+      {/* --- VIDEO SECTION (NOVO) --- */}
+      <section id="video-demo" className="py-20 bg-gray-900 border-y border-gray-800 relative overflow-hidden">
+         {/* Efeito de luz de fundo */}
+         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-orange-600/10 rounded-full blur-[100px] -z-10" />
+
+         <div className="max-w-5xl mx-auto px-6 text-center">
+            <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full bg-black/50 border border-gray-700 text-gray-300 text-sm font-medium">
+               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span> Assista a Demonstração
+            </div>
+            <h2 className="text-3xl md:text-5xl font-bold mb-10 text-white">Veja o <span className="text-orange-500">BarberPro</span> em Ação</h2>
+
+            {/* Container Responsivo do Vídeo */}
+            <motion.div 
+               initial={{ opacity: 0, y: 30 }}
+               whileInView={{ opacity: 1, y: 0 }}
+               viewport={{ once: true }}
+               className="relative w-full aspect-video rounded-3xl overflow-hidden border border-gray-700 shadow-[0_0_50px_rgba(234,88,12,0.2)] bg-black group"
+            >
+                <iframe 
+                    className="absolute top-0 left-0 w-full h-full"
+                    src="https://www.youtube.com/embed/asww0bmc9TE?si=P-p4nnBQkLIpowz0" 
+                    title="BarberPro Demo" 
+                    frameBorder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                    referrerPolicy="strict-origin-when-cross-origin" 
+                    allowFullScreen
+                ></iframe>
+            </motion.div>
+         </div>
+      </section>
+
       {/* SECTION: COMO FUNCIONA (TOUR) */}
-      <section id="como-funciona" className="py-24 bg-gray-900 border-y border-gray-800 relative">
+      <section id="como-funciona" className="py-24 bg-gray-950 relative">
         <div className="max-w-6xl mx-auto px-6">
             <div className="text-center mb-16">
                 <h2 className="text-3xl font-bold mb-4">Como funciona na prática?</h2>
@@ -217,9 +248,9 @@ export default function Home() {
                     <motion.div 
                         key={i}
                         initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.2 }}
-                        className="bg-gray-950 p-8 rounded-3xl border border-gray-800 relative group hover:border-orange-500/30 transition duration-500"
+                        className="bg-gray-900 p-8 rounded-3xl border border-gray-800 relative group hover:border-orange-500/30 transition duration-500"
                     >
-                        <div className="w-16 h-16 bg-gray-900 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition shadow-inner">
+                        <div className="w-16 h-16 bg-gray-950 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition shadow-inner">
                             {step.icon}
                         </div>
                         <h3 className="text-xl font-bold mb-3 text-white group-hover:text-orange-400 transition">{step.title}</h3>
@@ -234,7 +265,7 @@ export default function Home() {
       </section>
 
       {/* SECTION: FERRAMENTAS (BENTO GRID) */}
-      <section className="py-24 px-6">
+      <section className="py-24 px-6 bg-gray-950">
         <div className="max-w-6xl mx-auto">
             <div className="text-center mb-16">
                 <span className="text-orange-500 font-bold uppercase tracking-widest text-xs">Funcionalidades</span>
@@ -343,7 +374,7 @@ export default function Home() {
       </section>
 
       {/* FAQ SECTION */}
-      <section className="py-24 px-6 max-w-3xl mx-auto">
+      <section className="py-24 px-6 max-w-3xl mx-auto bg-gray-950">
           <div className="text-center mb-12">
               <FaQuestionCircle className="text-4xl text-gray-700 mx-auto mb-4"/>
               <h2 className="text-3xl font-bold">Dúvidas Frequentes</h2>
