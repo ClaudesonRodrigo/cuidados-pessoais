@@ -178,6 +178,34 @@ export default function Home() {
         </div>
       </header>
 
+      {/* SECTION: VÍDEO DE DEMONSTRAÇÃO (RESTAURADA E ATUALIZADA) */}
+      <section id="video-demo" className="py-40 bg-gray-900 relative overflow-hidden">
+         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(139,92,246,0.15),transparent_70%)]" />
+         <div className="max-w-5xl mx-auto px-6 text-center relative z-10">
+            <div className="inline-flex items-center gap-3 mb-10 px-6 py-2 rounded-full bg-white/5 border border-white/10 text-purple-400 text-xs font-black uppercase tracking-[0.3em]">
+               <FaPlay size={10} className="animate-pulse"/> Assista ao Tour
+            </div>
+            <h2 className="text-5xl md:text-7xl font-black mb-16 text-white tracking-tighter font-serif-luxury italic">A revolução no seu <br/> <span className="text-purple-500">atendimento.</span></h2>
+
+            <motion.div 
+               initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }}
+               viewport={{ once: true }}
+               className="relative w-full aspect-video rounded-[3rem] overflow-hidden border border-white/10 shadow-[0_0_100px_rgba(139,92,246,0.3)] bg-black"
+            >
+                {/* VÍDEO SOLICITADO IMPLEMENTADO */}
+                <iframe 
+                    className="absolute top-0 left-0 w-full h-full" 
+                    src="https://www.youtube.com/embed/rSmsouRQm3s?si=NutKQOQ1WnwRLAhL" 
+                    title="Apresentação BeautyPro" 
+                    frameBorder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    allowFullScreen
+                ></iframe>
+            </motion.div>
+         </div>
+      </section>
+
       {/* SECTION: BENTO GRID VITRINE */}
       <section className="py-40 bg-white">
         <div className="max-w-7xl mx-auto px-6">
