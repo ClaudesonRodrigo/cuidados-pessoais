@@ -1,198 +1,95 @@
-/* src/app/globals.css */
+/* 1. Imports de Fontes (Sempre no topo absoluto) */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
+
+/* 2. Import do Framework */
 @import "tailwindcss";
 
-/* Tema Padrão (Light) - Aplicado ao :root (html) por padrão */
+/* 3. Definições de Variáveis e Temas */
 :root {
-  --color-bg: #f3f4f6;
-  /* bg-gray-100 */
-  --color-text: #1f2937;
-  /* text-gray-800 */
-  --color-text-muted: #4b5563;
-  /* text-gray-600 */
-  --color-button-bg: #2563eb;
-  /* bg-blue-600 */
+  /* Tema Beauty Padrão (Light / Salão de Beleza) */
+  --color-bg: #fdfaf9; 
+  --color-text: #1a1a1a;
+  --color-text-muted: #6b7280;
+  --color-button-bg: #8b5cf6; 
   --color-button-text: #ffffff;
-  /* text-white */
-  --color-button-hover-bg: #1d4ed8;
-  /* hover:bg-blue-700 */
+  --color-button-hover-bg: #7c3aed;
   --color-image-border: #ffffff;
-  /* border-white */
-
-  /* Variáveis padrão para gradientes (caso não sejam sobrescritas) */
+  
+  /* Gradientes Beauty */
+  --color-beauty-start: #8b5cf6;
+  --color-beauty-end: #ec4899;
+  
+  /* Compatibilidade com temas antigos */
   --color-ocean-start: #1cb5e0;
   --color-ocean-end: #000046;
   --color-sunset-start: #ff7e5f;
   --color-sunset-end: #feb47b;
 }
 
-/* Tema Escuro - Ativado pela classe 'theme-dark' no html */
+/* Tema Dark Beauty */
 .theme-dark {
-  --color-bg: #111827;
-  /* bg-gray-900 */
-  --color-text: #e5e7eb;
-  /* text-gray-200 */
-  --color-text-muted: #9ca3af;
-  /* text-gray-400 */
-  --color-button-bg: #1d4ed8;
-  /* bg-blue-700 */
+  --color-bg: #0f172a;
+  --color-text: #f8fafc;
+  --color-text-muted: #94a3b8;
+  --color-button-bg: #8b5cf6;
   --color-button-text: #ffffff;
-  --color-button-hover-bg: #1e40af;
-  /* hover:bg-blue-800 */
-  --color-image-border: #374151;
-  /* border-gray-700 */
+  --color-button-hover-bg: #7c3aed;
+  --color-image-border: #1e293b;
 }
 
-/* Tema Ocean */
-.theme-ocean {
-  --color-bg: transparent;
-  /* Fundo será o gradiente aplicado no body */
+/* Tema Elegance (Luxo PRO: Preto e Dourado) */
+.theme-elegance {
+  --color-bg: #050505;
   --color-text: #ffffff;
-  --color-text-muted: #e0e0e0;
-  --color-button-bg: #ffffff;
-  --color-button-text: #157394;
-  --color-button-hover-bg: #e0f7ff;
-  --color-image-border: #ffffff;
+  --color-text-muted: #a1a1aa;
+  --color-button-bg: #d4a373; 
+  --color-button-text: #050505;
+  --color-button-hover-bg: #e9c46a;
+  --color-image-border: #d4a373;
 }
 
-/* Tema Sunset */
-.theme-sunset {
-  --color-bg: transparent;
-  --color-text: #ffffff;
-  --color-text-muted: #f0f0f0;
-  --color-button-bg: #ffffff;
-  --color-button-text: #c1573c;
-  --color-button-hover-bg: #fff0eb;
-  --color-image-border: #ffffff;
-}
+/* --- ESTILOS BASE --- */
 
-/* Tema Forest */
-.theme-forest {
-  --color-bg: #1A4D2E;
-  --color-text: #FAF3E0;
-  --color-text-muted: #e4dccf;
-  --color-button-bg: #FAF3E0;
-  --color-button-text: #1A4D2E;
-  --color-button-hover-bg: #e4dccf;
-  --color-image-border: #FAF3E0;
-}
-
-/* Tema Bubblegum */
-.theme-bubblegum {
-  --color-bg: #FFC0CB;
-  --color-text: #333333;
-  --color-text-muted: #555555;
-  --color-button-bg: #ffffff;
-  --color-button-text: #D14A89;
-  --color-button-hover-bg: #ffe4e8;
-  --color-image-border: #ffffff;
-}
-
-/* --- NOVOS TEMAS PRO --- */
-
-/* Tema Developer (Inspirado em IDEs / GitHub Dark) */
-.theme-developer {
-  --color-bg: #0d1117;
-  /* GitHub Dark */
-  --color-text: #c9d1d9;
-  /* Texto claro suave */
-  --color-text-muted: #8b949e;
-  /* Comentários cinza */
-  --color-button-bg: #21262d;
-  /* Fundo de painel */
-  --color-button-text: #58a6ff;
-  /* Azul Link / Variável */
-  --color-button-hover-bg: #30363d;
-  /* Hover sutil */
-  --color-image-border: #238636;
-  /* Verde 'Commit' */
-  font-family: 'Courier New', Courier, monospace;
-  /* Fonte monoespaçada */
-}
-
-/* Tema Corretor (Sofisticado) */
-.theme-realtor {
-  --color-bg: #1a1a1a;
-  --color-text: #f3f4f6;
-  --color-text-muted: #d1d5db;
-  --color-button-bg: #c0a062;
-  /* Dourado */
-  --color-button-text: #1a1a1a;
-  --color-button-hover-bg: #d4b475;
-  --color-image-border: #c0a062;
-  background-color: #1a1a1a;
-}
-
-/* Tema Restaurante */
-.theme-restaurant {
-  --color-bg: #290e0e;
-  /* Vinho escuro */
-  --color-text: #fff1e6;
-  --color-text-muted: #ffccb3;
-  --color-button-bg: #ff6b35;
-  /* Laranja vibrante */
-  --color-button-text: #ffffff;
-  --color-button-hover-bg: #ff8c61;
-  --color-image-border: #ff6b35;
-}
-
-/* Tema Oficina/Automotivo */
-.theme-mechanic {
-  --color-bg: #1f2937;
-  --color-text: #ffffff;
-  --color-text-muted: #9ca3af;
-  --color-button-bg: #374151;
-  /* Cinza metálico */
-  --color-button-text: #38bdf8;
-  /* Azul Neon */
-  --color-button-hover-bg: #4b5563;
-  --color-image-border: #38bdf8;
-}
-
-/* Tema Influencer */
-.theme-influencer {
-  --color-bg: transparent;
-  --color-text: #ffffff;
-  --color-text-muted: #ffe4e6;
-  --color-button-bg: rgba(255, 255, 255, 0.2);
-  --color-button-text: #ffffff;
-  --color-button-hover-bg: rgba(255, 255, 255, 0.3);
-  --color-image-border: #ffffff;
-  background-image: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
-}
-
-/* Tema Imagem Personalizada */
-.theme-custom-image {
-  --color-bg: #000000;
-  --color-text: #ffffff;
-  --color-text-muted: #e5e5e5;
-  --color-button-bg: rgba(0, 0, 0, 0.6);
-  --color-button-text: #ffffff;
-  --color-button-hover-bg: rgba(0, 0, 0, 0.8);
-  --color-image-border: #ffffff;
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-}
-
-/* Estilos base do body usando as variáveis CSS */
 body {
   background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: Arial, Helvetica, sans-serif;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  font-family: 'Plus Jakarta Sans', var(--font-jakarta), Arial, sans-serif;
+  transition: background-color 0.4s ease, color 0.4s ease;
   min-height: 100vh;
-  /* Garante que o fundo ocupe toda a altura */
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Aplica gradientes específicos quando essas classes estão no HTML */
-.theme-ocean,
-.theme-ocean body {
+/* Classe utilitária para Títulos Elegantes */
+.font-serif-luxury {
+  font-family: 'Playfair Display', var(--font-playfair), serif;
+}
+
+.beauty-gradient {
+  background-image: linear-gradient(135deg, var(--color-beauty-start), var(--color-beauty-end));
+}
+
+/* Gradientes de Temas Específicos */
+.theme-ocean, .theme-ocean body {
   background-image: linear-gradient(to right, var(--color-ocean-start), var(--color-ocean-end));
   background-color: var(--color-ocean-end);
 }
 
-.theme-sunset,
-.theme-sunset body {
+.theme-sunset, .theme-sunset body {
   background-image: linear-gradient(to right, var(--color-sunset-start), var(--color-sunset-end));
   background-color: var(--color-sunset-end);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-button-bg);
 }

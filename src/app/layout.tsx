@@ -1,37 +1,32 @@
 // src/app/layout.tsx
-
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Fonte moderna para o corpo do texto
+const jakarta = Plus_Jakarta_Sans({ 
   subsets: ["latin"],
+  variable: '--font-jakarta',
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// Fonte clássica e elegante para títulos (Luxury Style)
+const playfair = Playfair_Display({
   subsets: ["latin"],
+  variable: '--font-playfair',
 });
 
 export const metadata: Metadata = {
-  title: "Agenda Digital -Aracaju",
-  metadataBase: new URL('https://www.cardapiocerto.com.br'),
-  description: "Crie sua Barbearia personalizado e compartilhe com seus Clientes.",
+  title: "BeautyPro — Gestão de Salões de Luxo",
+  description: "Sua agenda no piloto automático com elegância e eficiência.",
   manifest: "/manifest.json",
-  icons: {
-    icon: '/icon-192x192.png',
-  },
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "Agenda Digital - Aracaju",
-  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#2563eb",
+  themeColor: "#8b5cf6",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({
@@ -40,11 +35,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // Alterado para Português do Brasil
-    <html lang="pt-BR">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="pt-BR" className={`${jakarta.variable} ${playfair.variable}`}>
+      <body className="antialiased">
         <AuthProvider>
           {children}
         </AuthProvider>

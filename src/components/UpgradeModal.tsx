@@ -11,7 +11,7 @@ interface Props {
 export function UpgradeModal({ isOpen, onClose }: Props) {
   // ⚠️ ATENÇÃO CARIOCA: Troque pela SUA chave Pix real aqui!
   const MINHA_CHAVE_PIX = "claudesonborges@gmail.com"; 
-  const MEU_NOME = "Rodrigo Borges";
+  const MEU_NOME = "Claudeson Rodrigo dos Santos Borges";
   const VALOR = "29,90"; // Defina o preço aqui
 
   const [copied, setCopied] = useState(false);
@@ -38,7 +38,7 @@ export function UpgradeModal({ isOpen, onClose }: Props) {
         <div className="bg-orange-600 p-6 text-center text-white relative">
           <button onClick={onClose} className="absolute top-4 right-4 text-white/80 hover:text-white"><FaTimes size={20}/></button>
           <h3 className="text-2xl font-bold mb-1">Seja Premium 🚀</h3>
-          <p className="text-orange-100 text-sm">Desbloqueie todo o poder do seu delivery</p>
+          <p className="text-orange-100 text-sm">Desbloqueie todo o poder do seu Salão Digital</p>
         </div>
 
         <div className="p-6">
