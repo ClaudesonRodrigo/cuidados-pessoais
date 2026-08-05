@@ -283,6 +283,17 @@ export default function DashboardPage() {
          </div>
       </nav>
 
+      {/* --- AVISO DE TRIAL DE 7 DIAS --- */}
+      {userData?.plan === 'pro' && userData?.trialDeadline && (
+        <div className="bg-linear-to-r from-amber-400 to-orange-500 text-white p-2.5 text-center text-xs font-black uppercase tracking-widest flex justify-center items-center gap-3 shadow-md z-10 relative">
+          <FaClock className="animate-pulse" /> 
+          Seu acesso PRO (Teste Grátis) expira em breve!
+          <button onClick={() => setIsUpgradeModalOpen(true)} className="ml-2 bg-gray-900 text-white px-4 py-1.5 rounded-full hover:bg-black transition shadow-xl active:scale-95">
+            Garantir Acesso
+          </button>
+        </div>
+      )}
+
       <main className="max-w-4xl mx-auto py-8 px-4 space-y-8">
         
         <div className="flex bg-gray-100 p-1.5 rounded-2xl overflow-x-auto shadow-inner">
