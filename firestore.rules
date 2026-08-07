@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSuperAdmin() {
+      return request.auth != null && request.auth.uid == 'HYyAPj9xDEYKPTymoRdklZxxXR33';
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isPageOwner(pageSlug) {
+      return request.auth != null &&
+             get(/databases/$(database)/documents/pages/$(pageSlug)).data.userId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow list: if isSuperAdmin();
+      allow read, write: if isSuperAdmin() || isOwner(userId);
+    }
+
+    match /pages/{pageId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() || (request.auth != null && (
+        (resource == null && request.resource.data.userId == request.auth.uid) ||
+        (resource != null && resource.data.userId == request.auth.uid)
+      ));
+    }
+
+    match /appointments/{appointmentId} {
+      allow create: if true;
+      allow read, update, delete: if isSuperAdmin() ||
+                                  isPageOwner(resource.data.pageSlug) ||
+                                  (request.auth != null && resource.data.customerId == request.auth.uid);
+    }
+
+    match /transactions/{transactionId} {
+      allow read, write: if isSuperAdmin() || isPageOwner(resource.data.pageSlug);
+    }
+
+    match /loyalty/{loyaltyId} {
+      allow read, write: if isSuperAdmin() || (request.auth != null);
+    }
+
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() || (request.auth != null);
+    }
+
+    match /barbershops/{shopId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() || (request.auth != null);
+    }
+  }
+}
