@@ -5,11 +5,12 @@ import { useEffect, useState, use } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { signInWithGoogle, signOutUser } from '@/lib/authService';
 import { 
-  getPageDataBySlug, getAppointmentsByDate, createAppointment, getAppointmentsByCustomer,
+  getPageDataBySlug, createAppointment, getAppointmentsByCustomer,
   PageData, LinkData, AppointmentData, ScheduleData,
   getCustomerLoyalty, LoyaltyData 
 } from "@/lib/pageService";
 import { generateAvailableSlots } from '@/lib/availability';
+import { fetchPublicAvailability } from '@/lib/publicAvailability';
 import { Timestamp } from 'firebase/firestore'; 
 import Link from 'next/link';
 import Image from 'next/image';
@@ -86,6 +87,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [selectedDate, setSelectedDate] = useState<string>(nextDays[0].fullDate); 
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
@@ -126,8 +128,10 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
 
   useEffect(() => {
     if (!pageData || totalDuration === 0 || !isSelectorOpen) return;
+    const abortController = new AbortController();
     const fetchSlots = async () => {
         setLoadingSlots(true);
+        setAvailabilityError(false);
         const dateStr = `${selectedDate}T00:00:00`; 
         const startOfDay = new Date(dateStr);
         const endOfDay = new Date(dateStr);
@@ -138,12 +142,27 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
              setLoadingSlots(false);
              return;
         }
-        const busyAppointments = await getAppointmentsByDate(resolvedParams.slug, startOfDay, endOfDay);
-        const slots = generateAvailableSlots(startOfDay, totalDuration, busyAppointments, pageData.schedule);
-        setAvailableSlots(slots);
-        setLoadingSlots(false);
+        try {
+            const busyIntervals = await fetchPublicAvailability(
+                {
+                    pageSlug: resolvedParams.slug,
+                    startAt: startOfDay.toISOString(),
+                    endAt: endOfDay.toISOString(),
+                },
+                abortController.signal,
+            );
+            const slots = generateAvailableSlots(startOfDay, totalDuration, busyIntervals, pageData.schedule);
+            setAvailableSlots(slots);
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') return;
+            setAvailableSlots([]);
+            setAvailabilityError(true);
+        } finally {
+            if (!abortController.signal.aborted) setLoadingSlots(false);
+        }
     };
     fetchSlots();
+    return () => abortController.abort();
   }, [selectedDate, totalDuration, pageData, resolvedParams.slug, isSelectorOpen]);
 
   const toggleCartItem = (item: LinkData) => {
@@ -348,6 +367,8 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                                     <div className="w-8 h-8 border-2 border-purple-500 rounded-full border-t-transparent animate-spin"/>
                                     <span className="text-[10px] font-black uppercase tracking-widest text-purple-200">Consultando Agenda...</span>
                                 </div>
+                            ) : availabilityError ? (
+                                <div className="text-center py-12 bg-amber-50/50 rounded-[2rem] border border-amber-100 border-dashed text-amber-600 text-xs font-bold uppercase tracking-widest">Agenda temporariamente indisponível</div>
                             ) : availableSlots.length > 0 ? (
                                 <div className="grid grid-cols-4 gap-3">
                                     {availableSlots.map(time => (

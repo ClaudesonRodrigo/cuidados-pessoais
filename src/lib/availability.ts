@@ -1,9 +1,21 @@
-import { AppointmentData, ScheduleData } from "./pageService";
+import type { ScheduleData } from "./pageService";
+
+type AvailabilityDate = Date | string | { toDate(): Date };
+
+export type BusyIntervalInput = {
+  startAt: AvailabilityDate;
+  endAt: AvailabilityDate;
+};
+
+const toDate = (value: AvailabilityDate): Date => {
+  if (value instanceof Date) return new Date(value);
+  return typeof value === "object" && "toDate" in value ? value.toDate() : new Date(value);
+};
 
 export const generateAvailableSlots = (
   date: Date,
   durationMinutes: number,
-  busyAppointments: AppointmentData[],
+  busyAppointments: BusyIntervalInput[],
   schedule?: ScheduleData
 ): string[] => {
   const slots: string[] = [];
@@ -86,8 +98,8 @@ export const generateAvailableSlots = (
       // Regra D: Colisão com Agendamentos Existentes (Cliente 01 vs Cliente 02)
       if (!isLunchTime) {
           const isBusy = busyAppointments.some((app) => {
-            const appStart = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any);
-            const appEnd = (app.endAt as any).toDate ? (app.endAt as any).toDate() : new Date(app.endAt as any);
+            const appStart = toDate(app.startAt);
+            const appEnd = toDate(app.endAt);
             
             // Verifica se os horários se sobrepõem
             return currentSlot < appEnd && slotEnd > appStart;

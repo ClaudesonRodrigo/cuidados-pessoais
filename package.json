@@ -7,7 +7,9 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "test:onboarding": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/onboarding.test.mts"
+    "test:onboarding": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/onboarding.test.mts",
+    "test:availability": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runAvailabilityTests.mts",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-beautypro-rules \"node --test tests/firestore.rules.test.mjs\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -26,6 +28,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

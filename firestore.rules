@@ -1,56 +1,209 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
 
     function isSuperAdmin() {
-      return request.auth != null && request.auth.uid == 'HYyAPj9xDEYKPTymoRdklZxxXR33';
+      return isAuthenticated() &&
+             request.auth.uid == 'HYyAPj9xDEYKPTymoRdklZxxXR33';
     }
 
-    function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
+    function pagePath(pageSlug) {
+      return /databases/$(database)/documents/pages/$(pageSlug);
     }
 
-    function isPageOwner(pageSlug) {
-      return request.auth != null &&
-             get(/databases/$(database)/documents/pages/$(pageSlug)).data.userId == request.auth.uid;
+    function pageExists(pageSlug) {
+      return pageSlug is string && exists(pagePath(pageSlug));
+    }
+
+    function ownsPage(pageSlug) {
+      return isAuthenticated() &&
+             pageExists(pageSlug) &&
+             get(pagePath(pageSlug)).data.userId == request.auth.uid;
+    }
+
+    function ownsExistingTenant() {
+      return resource.data.pageSlug is string && ownsPage(resource.data.pageSlug);
+    }
+
+    function ownsNewTenant() {
+      return request.resource.data.pageSlug is string && ownsPage(request.resource.data.pageSlug);
+    }
+
+    function validAppointment(data) {
+      return data.keys().hasOnly([
+               'pageSlug', 'serviceId', 'serviceName', 'customerId',
+               'customerEmail', 'customerPhoto', 'customerName', 'customerPhone',
+               'startAt', 'endAt', 'status', 'createdAt', 'totalValue', 'notes'
+             ]) &&
+             data.keys().hasAll([
+               'pageSlug', 'serviceId', 'serviceName', 'customerId',
+               'customerName', 'customerPhone', 'startAt', 'endAt',
+               'status', 'createdAt', 'totalValue'
+             ]) &&
+             data.pageSlug is string &&
+             data.serviceId is string &&
+             data.serviceName is string &&
+             data.customerId is string &&
+             data.customerName is string &&
+             data.customerPhone is string &&
+             data.startAt is timestamp &&
+             data.endAt is timestamp &&
+             data.endAt > data.startAt &&
+             data.status is string &&
+             data.totalValue is number &&
+             data.totalValue >= 0 &&
+             data.createdAt is timestamp &&
+             (!('customerEmail' in data) || data.customerEmail is string) &&
+             (!('customerPhoto' in data) || data.customerPhoto is string) &&
+             (!('notes' in data) || data.notes is string);
+    }
+
+    function customerCanCancelAppointment() {
+      return isAuthenticated() &&
+             resource.data.customerId == request.auth.uid &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+             request.resource.data.status == 'cancelled' &&
+             resource.data.status in ['pending', 'confirmed'];
+    }
+
+    function ownerCanTransitionAppointment() {
+      return ownsExistingTenant() &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+             (
+               (resource.data.status == 'pending' &&
+                request.resource.data.status in ['confirmed', 'cancelled']) ||
+               (resource.data.status == 'confirmed' &&
+                request.resource.data.status in ['completed', 'cancelled'])
+             );
+    }
+
+    function validTransaction(data) {
+      return data.keys().hasOnly([
+               'pageSlug', 'type', 'description', 'value', 'category', 'date', 'createdAt'
+             ]) &&
+             data.keys().hasAll([
+               'pageSlug', 'type', 'description', 'value', 'category', 'date', 'createdAt'
+             ]) &&
+             data.pageSlug is string &&
+             data.type in ['income', 'expense'] &&
+             data.description is string &&
+             data.description.size() > 0 &&
+             data.value is number &&
+             data.value > 0 &&
+             data.category is string &&
+             data.category.size() > 0 &&
+             data.date is timestamp &&
+             data.createdAt is timestamp;
+    }
+
+    function coherentLoyaltyId(loyaltyId, data) {
+      return data.pageSlug is string &&
+             data.customerId is string &&
+             loyaltyId == data.pageSlug + '_' + data.customerId;
+    }
+
+    function validLoyalty(loyaltyId, data) {
+      return data.keys().hasOnly([
+               'pageSlug', 'customerId', 'points', 'totalRewards', 'lastUpdated'
+             ]) &&
+             data.keys().hasAll([
+               'pageSlug', 'customerId', 'points', 'totalRewards', 'lastUpdated'
+             ]) &&
+             coherentLoyaltyId(loyaltyId, data) &&
+             data.points is int &&
+             data.points >= 0 &&
+             data.totalRewards is int &&
+             data.totalRewards >= 0 &&
+             data.lastUpdated is timestamp;
     }
 
     match /users/{userId} {
+      allow get: if isSuperAdmin() ||
+                    (isAuthenticated() && request.auth.uid == userId);
       allow list: if isSuperAdmin();
-      allow read, write: if isSuperAdmin() || isOwner(userId);
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin() ||
+                       (isAuthenticated() &&
+                        request.auth.uid == userId &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                          'displayName', 'phone', 'cpfCnpj', 'photoURL'
+                        ]));
+      allow delete: if isSuperAdmin();
     }
 
-    match /pages/{pageId} {
-      allow read: if true;
-      allow write: if isSuperAdmin() || (request.auth != null && (
-        (resource == null && request.resource.data.userId == request.auth.uid) ||
-        (resource != null && resource.data.userId == request.auth.uid)
-      ));
+    match /pages/{pageSlug} {
+      allow get: if true;
+      allow list: if isSuperAdmin() ||
+                     (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin() ||
+                       (isAuthenticated() &&
+                        resource.data.userId == request.auth.uid &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                          'title', 'bio', 'address', 'whatsapp', 'pixKey',
+                          'profileImageUrl', 'backgroundImage', 'links', 'coupons',
+                          'theme', 'isOpen', 'schedule'
+                        ]));
+      allow delete: if isSuperAdmin();
     }
 
     match /appointments/{appointmentId} {
-      allow create: if true;
-      allow read, update, delete: if isSuperAdmin() ||
-                                  isPageOwner(resource.data.pageSlug) ||
-                                  (request.auth != null && resource.data.customerId == request.auth.uid);
+      allow create: if isSuperAdmin() ||
+                       (isAuthenticated() &&
+                        validAppointment(request.resource.data) &&
+                        request.resource.data.customerId == request.auth.uid &&
+                        request.resource.data.status == 'pending' &&
+                        pageExists(request.resource.data.pageSlug));
+      allow get, list: if isSuperAdmin() ||
+                          (isAuthenticated() &&
+                           resource.data.customerId == request.auth.uid) ||
+                          ownsExistingTenant();
+      allow update: if isSuperAdmin() ||
+                       customerCanCancelAppointment() ||
+                       ownerCanTransitionAppointment();
+      allow delete: if isSuperAdmin();
     }
 
     match /transactions/{transactionId} {
-      allow read, write: if isSuperAdmin() || isPageOwner(resource.data.pageSlug);
+      allow create: if isSuperAdmin() ||
+                       (ownsNewTenant() && validTransaction(request.resource.data));
+      allow get, list: if isSuperAdmin() || ownsExistingTenant();
+      allow update: if isSuperAdmin() ||
+                       (ownsExistingTenant() &&
+                        ownsNewTenant() &&
+                        request.resource.data.pageSlug == resource.data.pageSlug &&
+                        request.resource.data.createdAt == resource.data.createdAt &&
+                        validTransaction(request.resource.data));
+      allow delete: if isSuperAdmin() || ownsExistingTenant();
     }
 
     match /loyalty/{loyaltyId} {
-      allow read, write: if isSuperAdmin() || (request.auth != null);
+      allow get: if isSuperAdmin() ||
+                    (isAuthenticated() &&
+                     resource.data.customerId == request.auth.uid &&
+                     coherentLoyaltyId(loyaltyId, resource.data)) ||
+                    ownsExistingTenant();
+      allow list: if isSuperAdmin() || ownsExistingTenant();
+      allow create: if isSuperAdmin() ||
+                       (ownsNewTenant() && validLoyalty(loyaltyId, request.resource.data));
+      allow update: if isSuperAdmin() ||
+                       (ownsExistingTenant() &&
+                        ownsNewTenant() &&
+                        request.resource.data.pageSlug == resource.data.pageSlug &&
+                        request.resource.data.customerId == resource.data.customerId &&
+                        validLoyalty(loyaltyId, request.resource.data));
+      allow delete: if isSuperAdmin();
     }
 
     match /services/{serviceId} {
-      allow read: if true;
-      allow write: if isSuperAdmin() || (request.auth != null);
+      allow get, list, create, update, delete: if isSuperAdmin();
     }
 
     match /barbershops/{shopId} {
-      allow read: if true;
-      allow write: if isSuperAdmin() || (request.auth != null);
+      allow get, list, create, update, delete: if isSuperAdmin();
     }
   }
 }
