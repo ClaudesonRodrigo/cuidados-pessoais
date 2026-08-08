@@ -74,6 +74,59 @@ export class InvalidOnboardingTokenError extends Error {
   }
 }
 
+const JWT_STRUCTURE_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
+const DEFINITIVE_CREDENTIAL_ERROR_CODES = new Set([
+  "auth/id-token-expired",
+  "auth/id-token-revoked",
+  "auth/invalid-id-token",
+  "auth/user-disabled",
+]);
+const CREDENTIAL_ARGUMENT_ERROR_PREFIXES = [
+  "Decoding Firebase ID token failed.",
+  "verifyIdToken() expects an ID token, but was given a custom token.",
+  "verifyIdToken() expects an ID token, but was given a legacy custom token.",
+  'Firebase ID token has no "kid" claim.',
+  "Firebase ID token has incorrect algorithm.",
+  'Firebase ID token has incorrect "aud" (audience) claim.',
+  'Firebase ID token has incorrect "iss" (issuer) claim.',
+  'Firebase ID token has no "sub" (subject) claim.',
+  'Firebase ID token has an empty "sub" (subject) claim.',
+  'Firebase ID token has a "sub" (subject) claim longer than 128 characters.',
+  "Firebase ID token has invalid signature.",
+  'Firebase ID token has "kid" claim which does not correspond to a known public key.',
+];
+
+const errorProperty = (error: unknown, property: "code" | "message"): string | undefined => {
+  if (typeof error !== "object" || error === null) return undefined;
+  const value = (error as Record<string, unknown>)[property];
+  return typeof value === "string" ? value : undefined;
+};
+
+export const isCredentialVerificationError = (error: unknown): boolean => {
+  const code = errorProperty(error, "code");
+  if (code && DEFINITIVE_CREDENTIAL_ERROR_CODES.has(code)) return true;
+  if (code !== "auth/argument-error") return false;
+
+  const message = errorProperty(error, "message");
+  return Boolean(
+    message && CREDENTIAL_ARGUMENT_ERROR_PREFIXES.some((prefix) => message.startsWith(prefix)),
+  );
+};
+
+export const verifyOnboardingIdToken = async (
+  token: string,
+  verify: (token: string) => Promise<DecodedIdentity>,
+): Promise<DecodedIdentity> => {
+  if (!JWT_STRUCTURE_PATTERN.test(token)) throw new InvalidOnboardingTokenError();
+
+  try {
+    return await verify(token);
+  } catch (error) {
+    if (isCredentialVerificationError(error)) throw new InvalidOnboardingTokenError();
+    throw error;
+  }
+};
+
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 

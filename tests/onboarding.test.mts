@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   handleOnboardingRequest,
   InvalidOnboardingTokenError,
+  verifyOnboardingIdToken,
   type DecodedIdentity,
   type OnboardingStore,
   type OnboardingTransaction,
@@ -100,6 +101,17 @@ const execute = (
 
 const responseBody = (response: Response) => response.json() as Promise<Record<string, any>>;
 
+const firebaseAuthError = (code: string, message: string, cause?: unknown) =>
+  Object.assign(new Error(message), { code, ...(cause === undefined ? {} : { cause }) });
+
+const executeWithSdkError = (error: Error & { code: string }, token = "header.payload.signature") =>
+  execute(
+    new MemoryStore(),
+    customerBody(),
+    token,
+    (value) => verifyOnboardingIdToken(value, async () => { throw error; }),
+  );
+
 test("token ausente é rejeitado", async () => {
   const response = await execute(new MemoryStore(), customerBody());
   assert.equal(response.status, 401);
@@ -108,6 +120,65 @@ test("token ausente é rejeitado", async () => {
 
 test("token inválido é rejeitado", async () => {
   assert.equal((await execute(new MemoryStore(), customerBody(), "invalid")).status, 401);
+});
+
+test("token estruturalmente impossível retorna 401 sem chamar Firebase Admin", async () => {
+  let verificationCalled = false;
+  const response = await execute(
+    new MemoryStore(),
+    customerBody(),
+    "nao-e-jwt",
+    (value) => verifyOnboardingIdToken(value, async () => {
+      verificationCalled = true;
+      return identities["token-a"];
+    }),
+  );
+  assert.equal(response.status, 401);
+  assert.equal(verificationCalled, false);
+});
+
+test("assinatura inválida inequívoca do SDK retorna 401", async () => {
+  const error = firebaseAuthError(
+    "auth/argument-error",
+    "Firebase ID token has invalid signature. See Firebase documentation.",
+  );
+  assert.equal((await executeWithSdkError(error)).status, 401);
+});
+
+test("audience inválido inequívoco do SDK retorna 401", async () => {
+  const error = firebaseAuthError(
+    "auth/argument-error",
+    'Firebase ID token has incorrect "aud" (audience) claim. Expected project-a but got project-b.',
+  );
+  assert.equal((await executeWithSdkError(error)).status, 401);
+});
+
+test("token expirado do SDK retorna 401", async () => {
+  const error = firebaseAuthError("auth/id-token-expired", "The provided Firebase ID token is expired.");
+  assert.equal((await executeWithSdkError(error)).status, 401);
+});
+
+test("KEY_FETCH_ERROR mapeado para auth/argument-error retorna 503 sem detalhes", async () => {
+  const error = firebaseAuthError(
+    "auth/argument-error",
+    "Error fetching public keys for Google certs: KEY_FETCH_ERROR socket hang up",
+    { code: "key-fetch-error", url: "https://www.googleapis.com/robot/v1/metadata/x509/internal" },
+  );
+  const response = await executeWithSdkError(error);
+  const serialized = JSON.stringify(await responseBody(response));
+  assert.equal(response.status, 503);
+  assert.equal(serialized.includes("ONBOARDING_UNAVAILABLE"), true);
+  for (const forbidden of [
+    "KEY_FETCH_ERROR", "auth/argument-error", "public keys", "googleapis.com",
+    "socket hang up", "key-fetch-error",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+});
+
+test("auth/argument-error ambíguo retorna 503", async () => {
+  const error = firebaseAuthError("auth/argument-error", "Operational verifier failure.");
+  assert.equal((await executeWithSdkError(error)).status, 503);
 });
 
 for (const authorization of ["Basic credencial", "Bearer", "Bearer "]) {
@@ -466,8 +537,6 @@ test("rota usa verifyIdToken e uma transação Firestore", async () => {
   assert.equal(source.includes("db.runTransaction"), true);
   assert.equal(source.includes("firestoreTransaction.create"), true);
   assert.equal(source.includes('runtime = "nodejs"'), true);
-  assert.equal(source.includes("InvalidOnboardingTokenError"), true);
-  assert.equal(source.includes('"auth/id-token-expired"'), true);
-  assert.equal(source.includes('"auth/id-token-revoked"'), true);
+  assert.equal(source.includes("verifyOnboardingIdToken"), true);
   assert.equal(source.includes("const adminAuth = getAdminAuth()"), true);
 });

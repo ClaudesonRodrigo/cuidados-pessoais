@@ -1,28 +1,12 @@
 import { getAdminAuth, getAdminFirestore } from "@/lib/firebaseAdmin";
 import {
   handleOnboardingRequest,
-  InvalidOnboardingTokenError,
+  verifyOnboardingIdToken,
   type OnboardingStore,
 } from "@/lib/onboardingService";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const INVALID_ID_TOKEN_CODES = new Set([
-  "auth/argument-error",
-  "auth/invalid-argument",
-  "auth/id-token-expired",
-  "auth/id-token-revoked",
-  "auth/invalid-id-token",
-  "auth/user-disabled",
-]);
-
-const isInvalidIdTokenError = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  typeof error.code === "string" &&
-  INVALID_ID_TOKEN_CODES.has(error.code);
 
 const onboardingStore: OnboardingStore = {
   runTransaction(operation) {
@@ -50,16 +34,12 @@ const onboardingStore: OnboardingStore = {
 
 export const POST = (request: Request) =>
   handleOnboardingRequest(request, {
-    verifyIdToken: async (token) => {
-      const adminAuth = getAdminAuth();
-      try {
+    verifyIdToken: (token) =>
+      verifyOnboardingIdToken(token, async () => {
+        const adminAuth = getAdminAuth();
         const decoded = await adminAuth.verifyIdToken(token);
         return { uid: decoded.uid, email: decoded.email };
-      } catch (error) {
-        if (isInvalidIdTokenError(error)) throw new InvalidOnboardingTokenError();
-        throw error;
-      }
-    },
+      }),
     store: onboardingStore,
   });
 
