@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   handleOnboardingRequest,
+  InvalidOnboardingTokenError,
   type DecodedIdentity,
   type OnboardingStore,
   type OnboardingTransaction,
@@ -92,7 +93,7 @@ const execute = (
   token?: string,
   verify = async (value: string) => {
     const identity = identities[value];
-    if (!identity) throw new Error("invalid token secret");
+    if (!identity) throw new InvalidOnboardingTokenError();
     return identity;
   },
 ) => handleOnboardingRequest(makeRequest(body, token), { verifyIdToken: verify, store, now: () => NOW });
@@ -100,11 +101,49 @@ const execute = (
 const responseBody = (response: Response) => response.json() as Promise<Record<string, any>>;
 
 test("token ausente é rejeitado", async () => {
-  assert.equal((await execute(new MemoryStore(), customerBody())).status, 401);
+  const response = await execute(new MemoryStore(), customerBody());
+  assert.equal(response.status, 401);
+  assert.equal((await responseBody(response)).error.code, "UNAUTHORIZED");
 });
 
 test("token inválido é rejeitado", async () => {
   assert.equal((await execute(new MemoryStore(), customerBody(), "invalid")).status, 401);
+});
+
+for (const authorization of ["Basic credencial", "Bearer", "Bearer "]) {
+  test(`Authorization inválida é rejeitada sem verificar token: ${JSON.stringify(authorization)}`, async () => {
+    let verificationCalled = false;
+    const request = new Request("http://localhost/api/onboarding", {
+      method: "POST",
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      body: JSON.stringify(customerBody()),
+    });
+    const response = await handleOnboardingRequest(request, {
+      verifyIdToken: async () => {
+        verificationCalled = true;
+        return identities["token-a"];
+      },
+      store: new MemoryStore(),
+      now: () => NOW,
+    });
+    assert.equal(response.status, 401);
+    assert.equal(verificationCalled, false);
+  });
+}
+
+test("falha de getAdminAuth/inicialização retorna 503, não 401", async () => {
+  const response = await execute(
+    new MemoryStore(),
+    customerBody(),
+    "token-a",
+    async () => { throw new Error("FIREBASE_PRIVATE_KEY=segredo configuração interna"); },
+  );
+  const serialized = JSON.stringify(await responseBody(response));
+  assert.equal(response.status, 503);
+  assert.equal(serialized.includes("ONBOARDING_UNAVAILABLE"), true);
+  for (const forbidden of ["FIREBASE_PRIVATE_KEY", "segredo", "configuração interna", "stack"]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
 });
 
 test("customer novo deriva UID e email somente do token", async () => {
@@ -197,6 +236,36 @@ test("campo desconhecido não é ignorado", async () => {
   assert.equal((await execute(new MemoryStore(), customerBody({ extra: true }), "token-a")).status, 400);
 });
 
+test("JSON malformado retorna resposta controlada", async () => {
+  const request = new Request("http://localhost/api/onboarding", {
+    method: "POST",
+    headers: { Authorization: "Bearer token-a", "Content-Type": "application/json" },
+    body: "{incompleto",
+  });
+  const response = await handleOnboardingRequest(request, {
+    verifyIdToken: async () => identities["token-a"],
+    store: new MemoryStore(),
+    now: () => NOW,
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await responseBody(response)).error.code, "INVALID_REQUEST");
+});
+
+test("body acima do limite retorna resposta controlada", async () => {
+  const request = new Request("http://localhost/api/onboarding", {
+    method: "POST",
+    headers: { Authorization: "Bearer token-a", "Content-Type": "application/json" },
+    body: JSON.stringify(customerBody({ displayName: "a".repeat(8_192) })),
+  });
+  const response = await handleOnboardingRequest(request, {
+    verifyIdToken: async () => identities["token-a"],
+    store: new MemoryStore(),
+    now: () => NOW,
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await responseBody(response)).error.code, "INVALID_REQUEST");
+});
+
 for (const slug of ["../pages", "salao/a", "Salao-A", "salao a", "a"]) {
   test(`slug inválido é rejeitado: ${slug}`, async () => {
     const response = await execute(new MemoryStore(), ownerBody({ slug }), "owner-a");
@@ -224,6 +293,32 @@ test("slug concorrente cria somente um owner e uma page", async () => {
   assert.equal(store.users.size, 1);
 });
 
+test("mesmo UID concorrente com slugs diferentes cria somente um estado", async () => {
+  const store = new MemoryStore();
+  const [first, second] = await Promise.all([
+    execute(store, ownerBody({ slug: "primeiro-salao" }), "owner-a"),
+    execute(store, ownerBody({ slug: "segundo-salao" }), "owner-a"),
+  ]);
+  assert.deepEqual([first.status, second.status].sort(), [200, 409]);
+  assert.equal(store.users.size, 1);
+  assert.equal(store.pages.size, 1);
+});
+
+test("mesmo UID e mesma requisição concorrente é idempotente", async () => {
+  const store = new MemoryStore();
+  const [first, second] = await Promise.all([
+    execute(store, ownerBody(), "owner-a"),
+    execute(store, ownerBody(), "owner-a"),
+  ]);
+  assert.deepEqual([first.status, second.status], [200, 200]);
+  assert.deepEqual(
+    [(await responseBody(first)).status, (await responseBody(second)).status].sort(),
+    ["ALREADY_PROVISIONED", "PROVISIONED"],
+  );
+  assert.equal(store.users.size, 1);
+  assert.equal(store.pages.size, 1);
+});
+
 test("falha na page não cria user parcial", async () => {
   const store = new MemoryStore();
   store.failCreatePage = true;
@@ -240,6 +335,18 @@ test("estado legado contraditório retorna PROVISIONING_CONFLICT", async () => {
   assert.equal(response.status, 409);
   assert.equal((await responseBody(response)).error.code, "PROVISIONING_CONFLICT");
 });
+
+for (const field of ["admin", "isPro"] as const) {
+  test(`customer legado com ${field}:true retorna conflito sem reparo`, async () => {
+    const store = new MemoryStore();
+    const original = { role: "customer", [field]: true };
+    store.users.set("customer-a", structuredClone(original));
+    const response = await execute(store, customerBody(), "token-a");
+    assert.equal(response.status, 409);
+    assert.equal((await responseBody(response)).error.code, "PROVISIONING_CONFLICT");
+    assert.deepEqual(store.users.get("customer-a"), original);
+  });
+}
 
 test("customer para owner não é convertido automaticamente", async () => {
   const store = new MemoryStore();
@@ -263,6 +370,19 @@ test("estado parcial legado do owner não é reparado silenciosamente", async ()
   const response = await execute(store, ownerBody(), "owner-a");
   assert.equal(response.status, 409);
   assert.equal(store.pages.size, 0);
+});
+
+test("owner legado com flag administrativa contraditória retorna conflito sem reparo", async () => {
+  const store = new MemoryStore();
+  await execute(store, ownerBody(), "owner-a");
+  const originalUser = { ...structuredClone(store.users.get("owner-a")!), admin: true };
+  store.users.set("owner-a", originalUser);
+  const originalPage = structuredClone(store.pages.get("salao-owner-a")!);
+  const response = await execute(store, ownerBody(), "owner-a");
+  assert.equal(response.status, 409);
+  assert.equal((await responseBody(response)).error.code, "PROVISIONING_CONFLICT");
+  assert.deepEqual(store.users.get("owner-a"), originalUser);
+  assert.deepEqual(store.pages.get("salao-owner-a"), originalPage);
 });
 
 test("erro interno não expõe stack ou segredo", async () => {
@@ -299,6 +419,19 @@ test("login customer e owner usam ID Token e endpoint, sem escrita Firestore", a
   assert.equal(source.includes("accountType: 'owner'"), true);
 });
 
+test("AuthContext apenas observa e lê o perfil, sem bootstrap administrativo", async () => {
+  const source = await readFile("src/context/AuthContext.tsx", "utf8");
+  assert.equal(source.includes("onAuthStateChanged"), true);
+  assert.equal(source.includes("getDoc(userRef)"), true);
+  assert.equal(source.includes("setUserData(userSnap.data())"), true);
+  for (const forbidden of [
+    "setDoc", "updateDoc", "addDoc", "writeBatch", "runTransaction",
+    "HYyAPj9xDEYKPTymoRdklZxxXR33", "isSuperAdmin", "serverTimestamp",
+  ]) {
+    assert.equal(source.includes(forbidden), false, `${forbidden} não deve existir no AuthContext`);
+  }
+});
+
 test("owner existente reutiliza pageSlug para idempotência do login", async () => {
   const source = await readFile("src/lib/authService.ts", "utf8");
   assert.equal(source.includes("existingOwnerSlug || generateSlug"), true);
@@ -322,7 +455,8 @@ test("Firebase Admin é server-only e não usa variável pública", async () => 
   const source = await readFile("src/lib/firebaseAdmin.ts", "utf8");
   assert.equal(source.includes('import "server-only"'), true);
   assert.equal(source.includes("NEXT_PUBLIC_"), false);
-  assert.equal(source.includes("getApps().length"), true);
+  assert.equal(source.includes('app.name === "[DEFAULT]"'), true);
+  assert.equal(source.includes("getApp()"), false);
   assert.equal(source.includes("FIREBASE_PRIVATE_KEY"), true);
 });
 
@@ -332,4 +466,8 @@ test("rota usa verifyIdToken e uma transação Firestore", async () => {
   assert.equal(source.includes("db.runTransaction"), true);
   assert.equal(source.includes("firestoreTransaction.create"), true);
   assert.equal(source.includes('runtime = "nodejs"'), true);
+  assert.equal(source.includes("InvalidOnboardingTokenError"), true);
+  assert.equal(source.includes('"auth/id-token-expired"'), true);
+  assert.equal(source.includes('"auth/id-token-revoked"'), true);
+  assert.equal(source.includes("const adminAuth = getAdminAuth()"), true);
 });

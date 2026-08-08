@@ -67,6 +67,13 @@ class OnboardingError extends Error {
   }
 }
 
+export class InvalidOnboardingTokenError extends Error {
+  constructor() {
+    super("Invalid Firebase ID token.");
+    this.name = "InvalidOnboardingTokenError";
+  }
+}
+
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -166,7 +173,9 @@ const isConsistentCustomer = (user: DocumentData): boolean =>
   (user.plan === undefined || user.plan === null) &&
   (user.trialDeadline === undefined || user.trialDeadline === null) &&
   (user.pageSlug === undefined || user.pageSlug === null) &&
-  user.isSuperAdmin !== true;
+  user.isSuperAdmin !== true &&
+  user.admin !== true &&
+  user.isPro !== true;
 
 const isConsistentOwner = (
   user: DocumentData,
@@ -185,7 +194,12 @@ const isConsistentOwner = (
     page.plan === "pro" &&
     userTrial !== null &&
     userTrial === pageTrial &&
-    user.isSuperAdmin !== true
+    user.isSuperAdmin !== true &&
+    user.admin !== true &&
+    user.isPro !== true &&
+    page.isSuperAdmin !== true &&
+    page.admin !== true &&
+    page.isPro !== true
   );
 };
 
@@ -316,8 +330,11 @@ export const handleOnboardingRequest = async (
     let identity: DecodedIdentity;
     try {
       identity = await dependencies.verifyIdToken(match[1]);
-    } catch {
-      throw new OnboardingError(401, "UNAUTHORIZED", "Token inválido.");
+    } catch (error) {
+      if (error instanceof InvalidOnboardingTokenError) {
+        throw new OnboardingError(401, "UNAUTHORIZED", "Token inválido.");
+      }
+      throw error;
     }
     if (!identity || typeof identity.uid !== "string" || identity.uid.length === 0) {
       throw new OnboardingError(401, "UNAUTHORIZED", "Token inválido.");

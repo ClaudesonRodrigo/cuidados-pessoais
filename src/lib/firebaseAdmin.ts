@@ -1,6 +1,6 @@
 import "server-only";
 
-import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
@@ -11,7 +11,8 @@ const requiredServerVariable = (name: string): string => {
 };
 
 const getFirebaseAdminApp = () => {
-  if (getApps().length > 0) return getApp();
+  const defaultApp = getApps().find((app) => app.name === "[DEFAULT]");
+  if (defaultApp) return defaultApp;
 
   if (process.env.FIRESTORE_EMULATOR_HOST) {
     return initializeApp({
