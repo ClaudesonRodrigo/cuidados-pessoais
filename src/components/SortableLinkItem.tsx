@@ -19,7 +19,8 @@ interface Props {
 export function SortableLinkItem({ id, link, index, onEdit, onDelete, editingIndex }: Props) {
   // Agora usamos o 'id' que veio do pai, garantindo que seja igual
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ 
-    id: id 
+    id,
+    disabled: editingIndex !== null,
   });
 
   const style = {
@@ -31,7 +32,7 @@ export function SortableLinkItem({ id, link, index, onEdit, onDelete, editingInd
     <div 
         ref={setNodeRef} 
         style={style} 
-        className="bg-white border border-gray-200 rounded-xl p-3 flex items-center gap-3 shadow-sm group hover:border-orange-300 transition-all select-none touch-manipulation"
+        className={`bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm group hover:border-orange-300 transition-all select-none touch-manipulation ${editingIndex === index ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}
     >
       {/* 1. Alça de Arrastar (Drag Handle) */}
       <div {...attributes} {...listeners} className="text-gray-300 cursor-grab active:cursor-grabbing hover:text-orange-500 p-1 shrink-0">

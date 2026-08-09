@@ -7,6 +7,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
+    "test:services": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/service-edit.test.mts",
     "test:onboarding": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/onboarding.test.mts",
     "test:availability": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runAvailabilityTests.mts",
     "test:booking": "firebase emulators:exec --only firestore --project demo-beautypro-booking \"node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/booking.emulator.test.mjs\"",

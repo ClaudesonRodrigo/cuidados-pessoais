@@ -7,7 +7,6 @@ import { signInWithGoogle, signOutUser } from '@/lib/authService';
 import { 
   getPageDataBySlug, getAppointmentsByCustomer,
   PageData, LinkData, AppointmentData, ScheduleData,
-  getCustomerLoyalty, LoyaltyData 
 } from "@/lib/pageService";
 import { generateAvailableSlots } from '@/lib/availability';
 import { fetchPublicAvailability } from '@/lib/publicAvailability';
@@ -20,7 +19,6 @@ import {
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeCanvas } from 'qrcode.react';
-import { LoyaltyCard } from '@/components/LoyaltyCard';
 
 // --- TIPOS ---
 interface ExtendedPageData extends PageData {
@@ -98,7 +96,6 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyApps, setHistoryApps] = useState<AppointmentData[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [loyaltyData, setLoyaltyData] = useState<LoyaltyData | null>(null);
   const bookingIdempotencyKey = useRef<string | null>(null);
 
   const totalDuration = cart.reduce((acc, item) => acc + (item.durationMinutes || 30), 0);
@@ -106,10 +103,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
 
   useEffect(() => {
       if (user?.displayName) setCustomerName(user.displayName);
-      if (user && resolvedParams.slug) {
-          getCustomerLoyalty(resolvedParams.slug, user.uid).then(setLoyaltyData);
-      }
-  }, [user, resolvedParams.slug]);
+  }, [user]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -287,12 +281,6 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         <h1 className="text-3xl font-bold mb-3 font-serif-luxury italic text-gray-900 leading-tight">{pageData.title}</h1>
         <p className="text-gray-400 text-sm max-w-xs mx-auto leading-relaxed font-medium mb-8">{pageData.bio}</p>
         
-        {user && loyaltyData && (
-            <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="mb-8">
-                <LoyaltyCard points={loyaltyData.points} rewards={loyaltyData.totalRewards} customerName={user.displayName?.split(' ')[0] || 'Cliente VIP'} />
-            </motion.div>
-        )}
-
         {isClosed ? (
             <div className="bg-red-50 text-red-500 text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-full inline-flex items-center gap-2 border border-red-100 shadow-sm"><FaStoreSlash/> Salão Fechado</div>
         ) : (

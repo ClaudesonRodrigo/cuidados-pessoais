@@ -244,6 +244,12 @@ test("owner não atualiza page de outro tenant", async () => {
   await assertFails(updateDoc(doc(db("ownerA"), "pages/salao-b"), { title: "Ataque" }));
 });
 
+test("owner não edita serviços de outro tenant", async () => {
+  await assertFails(updateDoc(doc(db("ownerA"), "pages/salao-b"), {
+    links: [{ title: "Ataque", type: "service", order: 1, durationMinutes: 30 }],
+  }));
+});
+
 for (const [field, value] of [
   ["userId", "owner-b"], ["slug", "outro"], ["plan", "free"],
   ["trialDeadline", CREATED], ["isPro", true], ["createdAt", END],
