@@ -10,6 +10,7 @@ import {
   type OnboardingStore,
   type OnboardingTransaction,
 } from "../src/lib/onboardingService.ts";
+import { OFFICIAL_SUPERADMIN_UID } from "../src/lib/adminIdentity.ts";
 
 type Data = Record<string, unknown>;
 
@@ -19,6 +20,7 @@ const identities: Record<string, DecodedIdentity> = {
   "token-b": { uid: "customer-b", email: "b@example.com" },
   "owner-a": { uid: "owner-a", email: "owner-a@example.com" },
   "owner-b": { uid: "owner-b", email: "owner-b@example.com" },
+  "superadmin": { uid: OFFICIAL_SUPERADMIN_UID, email: "admin@example.com" },
   "no-email": { uid: "no-email" },
 };
 
@@ -291,6 +293,66 @@ test("accountType admin é impossível", async () => {
   assert.equal(response.status, 400);
 });
 
+test("superadmin oficial recebe resultado administrativo idempotente", async () => {
+  const store = new MemoryStore();
+  store.failTransaction = new Error("a transação não deve ser executada");
+  store.users.set(OFFICIAL_SUPERADMIN_UID, {
+    role: "owner",
+    plan: "pro",
+    trialDeadline: null,
+    isSuperAdmin: true,
+  });
+
+  const response = await execute(store, ownerBody(), "superadmin");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await responseBody(response), {
+    status: "ALREADY_PROVISIONED",
+    accountType: "admin",
+  });
+  assert.equal(store.pages.size, 0);
+  assert.deepEqual(store.users.get(OFFICIAL_SUPERADMIN_UID), {
+    role: "owner",
+    plan: "pro",
+    trialDeadline: null,
+    isSuperAdmin: true,
+  });
+});
+
+test("nem o superadmin pode solicitar accountType admin pelo payload", async () => {
+  const response = await execute(new MemoryStore(), { accountType: "admin" }, "superadmin");
+  assert.equal(response.status, 400);
+  assert.equal((await responseBody(response)).error.code, "INVALID_REQUEST");
+});
+
+for (const [name, existingUser, token] of [
+  ["isSuperAdmin documental", { role: "owner", isSuperAdmin: true }, "owner-a"],
+  ["role admin", { role: "admin" }, "owner-a"],
+  ["email administrativo", null, "owner-a"],
+] as const) {
+  test(`UID comum não ganha autoridade por ${name}`, async () => {
+    const store = new MemoryStore();
+    if (existingUser) store.users.set("owner-a", structuredClone(existingUser));
+    const response = await execute(
+      store,
+      ownerBody(),
+      token,
+      async () => ({
+        uid: "owner-a",
+        email: name === "email administrativo" ? "claudesonborges@gmail.com" : "owner-a@example.com",
+      }),
+    );
+    const body = await responseBody(response);
+    assert.notEqual(body.accountType, "admin");
+    if (existingUser) {
+      assert.equal(response.status, 409);
+      assert.equal(body.error.code, "PROVISIONING_CONFLICT");
+    } else {
+      assert.equal(response.status, 200);
+      assert.equal(body.accountType, "owner");
+    }
+  });
+}
+
 for (const field of [
   "plan", "trialDeadline", "pageSlug", "uid", "userId", "createdAt",
   "isSuperAdmin", "admin", "isPro", "role", "email",
@@ -488,6 +550,17 @@ test("login customer e owner usam ID Token e endpoint, sem escrita Firestore", a
   assert.equal(source.includes("updateDoc("), false);
   assert.equal(source.includes("accountType: 'customer'"), true);
   assert.equal(source.includes("accountType: 'owner'"), true);
+});
+
+test("dashboard deriva capacidade administrativa somente do UID oficial", async () => {
+  const source = await readFile("src/app/admin/dashboard/page.tsx", "utf8");
+  assert.equal(source.includes("isOfficialSuperAdminUid(user?.uid || '')"), true);
+  assert.equal(source.includes("SUPER_ADMIN_EMAILS"), false);
+  assert.equal(source.includes("claudesonborges@gmail.com"), false);
+  assert.equal(source.includes("userData?.isSuperAdmin"), false);
+  assert.equal(source.includes("userData?.role === 'admin'"), false);
+  assert.equal(source.includes("if (isSuperAdmin && !adminViewId)"), true);
+  assert.equal(source.includes("...(!isSuperAdmin || pageSlug ? ["), true);
 });
 
 test("AuthContext apenas observa e lê o perfil, sem bootstrap administrativo", async () => {

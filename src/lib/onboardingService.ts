@@ -1,3 +1,5 @@
+import { isOfficialSuperAdminUid } from "./adminIdentity.ts";
+
 const MAX_BODY_BYTES = 8_192;
 const OWNER_TRIAL_MS = 7 * 24 * 60 * 60 * 1_000;
 const SLUG_PATTERN = /^[a-z0-9-]{3,120}$/;
@@ -40,7 +42,7 @@ type ParsedInput = {
 
 type ProvisioningResult = {
   status: "PROVISIONED" | "ALREADY_PROVISIONED";
-  accountType: AccountType;
+  accountType: AccountType | "admin";
   pageSlug?: string;
 };
 
@@ -394,6 +396,13 @@ export const handleOnboardingRequest = async (
     }
 
     const input = parseInput(await readBody(request));
+    if (isOfficialSuperAdminUid(identity.uid)) {
+      return publicResponse(
+        { status: "ALREADY_PROVISIONED", accountType: "admin" } satisfies ProvisioningResult,
+        200,
+      );
+    }
+
     const now = new Date((dependencies.now ?? (() => new Date()))().getTime());
     const result = await dependencies.store.runTransaction((transaction) =>
       input.accountType === "customer"

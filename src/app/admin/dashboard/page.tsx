@@ -22,6 +22,7 @@ import { SortableLinkItem } from '@/components/SortableLinkItem';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { ActionModal } from '@/components/ActionModal';
 import { TransactionModal } from '@/components/TransactionModal';
+import { isOfficialSuperAdminUid } from '@/lib/adminIdentity';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
@@ -35,9 +36,7 @@ export default function DashboardPage() {
   const [pageSlug, setPageSlug] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
   
-  // Lógica de Poder do Sábio
-  const SUPER_ADMIN_EMAILS = ["claudesonborges@gmail.com"];
-  const isSuperAdmin = userData?.isSuperAdmin || userData?.role === 'admin' || SUPER_ADMIN_EMAILS.includes(user?.email || "");
+  const isSuperAdmin = isOfficialSuperAdminUid(user?.uid || '');
   
   const [adminViewId, setAdminViewId] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -113,9 +112,19 @@ export default function DashboardPage() {
 
   // --- FUNÇÕES DE BUSCA ---
   const fetchPageData = useCallback(async () => {
-    const idToFetch = adminViewId || user?.uid; 
+    if (isSuperAdmin && !adminViewId) {
+      setPageData(null);
+      setPageSlug(null);
+      setActiveTab('master');
+      setIsLoadingData(false);
+      return;
+    }
+
+    const idToFetch = adminViewId || user?.uid;
     if (idToFetch) {
       setIsLoadingData(true);
+      setPageData(null);
+      setPageSlug(null);
       try {
           const result = await getPageDataForUser(idToFetch);
           if (result) {
@@ -133,10 +142,15 @@ export default function DashboardPage() {
                 setSchedLunchStart(data.schedule.lunchStart || ''); setSchedLunchEnd(data.schedule.lunchEnd || '');
                 setSchedDays(data.schedule.workingDays || [1, 2, 3, 4, 5, 6]);
             }
+          } else if (isSuperAdmin) {
+            setActiveTab('master');
           }
-      } catch (error) { console.error(error); } finally { setIsLoadingData(false); }
+      } catch (error) {
+        console.error(error);
+        if (isSuperAdmin) setActiveTab('master');
+      } finally { setIsLoadingData(false); }
     }
-  }, [user, adminViewId]); 
+  }, [user, adminViewId, isSuperAdmin]);
 
   const fetchUpcoming = useCallback(async () => {
       if (!pageSlug) return;
@@ -277,7 +291,7 @@ export default function DashboardPage() {
             <span className="text-gray-900">Beauty<span className="text-purple-500 font-light">Pro</span></span>
          </div>
          <div className="flex gap-4 items-center">
-             {adminViewId && <button onClick={() => { setAdminViewId(null); fetchPageData(); }} className="bg-purple-600 text-white px-5 py-2.5 rounded-full text-[10px] font-black uppercase flex items-center gap-2 shadow-xl hover:bg-purple-700 transition active:scale-95"><FaArrowLeft/> Voltar ao Painel</button>}
+             {adminViewId && <button onClick={() => { setAdminViewId(null); setActiveTab('master'); }} className="bg-purple-600 text-white px-5 py-2.5 rounded-full text-[10px] font-black uppercase flex items-center gap-2 shadow-xl hover:bg-purple-700 transition active:scale-95"><FaArrowLeft/> Voltar ao Painel</button>}
              {pageSlug && <a href={`/${pageSlug}`} target="_blank" className="bg-purple-50 text-purple-600 p-3 rounded-full hover:bg-purple-100 transition shadow-sm"><FaExternalLinkAlt size={14}/></a>}
              <button onClick={signOutUser} className="text-gray-400 hover:text-red-500 transition font-bold text-sm">Sair</button>
          </div>
@@ -295,13 +309,23 @@ export default function DashboardPage() {
       )}
 
       <main className="max-w-4xl mx-auto py-8 px-4 space-y-8">
+
+        {isSuperAdmin && !pageSlug && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 p-5 rounded-2xl text-sm font-bold">
+            {adminViewId
+              ? 'A conta selecionada não possui uma página. Selecione outro tenant na aba Master.'
+              : 'Selecione explicitamente um tenant na aba Master para editar foto, serviços ou perfil.'}
+          </div>
+        )}
         
         <div className="flex bg-gray-100 p-1.5 rounded-2xl overflow-x-auto shadow-inner">
             {[
-              { id: 'agenda', label: 'Agenda', icon: <FaCalendarAlt/> },
-              { id: 'financial', label: 'Financeiro', icon: <FaFileInvoiceDollar/> },
-              { id: 'services', label: 'Serviços', icon: <FaList/> },
-              { id: 'profile', label: 'Perfil', icon: <FaUserCog/> },
+              ...(!isSuperAdmin || pageSlug ? [
+                { id: 'agenda', label: 'Agenda', icon: <FaCalendarAlt/> },
+                { id: 'financial', label: 'Financeiro', icon: <FaFileInvoiceDollar/> },
+                { id: 'services', label: 'Serviços', icon: <FaList/> },
+                { id: 'profile', label: 'Perfil', icon: <FaUserCog/> },
+              ] : []),
               ...(isSuperAdmin ? [{ id: 'master', label: 'Master', icon: <FaShieldAlt/> }] : [])
             ].map(t => (
                 <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex-1 min-w-[100px] py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex justify-center items-center gap-2 transition-all ${activeTab === t.id ? 'bg-white shadow-lg text-purple-600 scale-[1.02]' : 'text-gray-400 hover:text-gray-600'}`}>
