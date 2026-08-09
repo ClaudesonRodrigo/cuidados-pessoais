@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test:onboarding": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/onboarding.test.mts",
     "test:availability": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runAvailabilityTests.mts",
+    "test:booking": "firebase emulators:exec --only firestore --project demo-beautypro-booking \"node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/booking.emulator.test.mjs\"",
     "test:rules": "firebase emulators:exec --only firestore --project demo-beautypro-rules \"node --test tests/firestore.rules.test.mjs\""
   },
   "dependencies": {

@@ -1,17 +1,17 @@
 // src/app/[slug]/page.tsx
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useRef, useState, use } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { signInWithGoogle, signOutUser } from '@/lib/authService';
 import { 
-  getPageDataBySlug, createAppointment, getAppointmentsByCustomer,
+  getPageDataBySlug, getAppointmentsByCustomer,
   PageData, LinkData, AppointmentData, ScheduleData,
   getCustomerLoyalty, LoyaltyData 
 } from "@/lib/pageService";
 import { generateAvailableSlots } from '@/lib/availability';
 import { fetchPublicAvailability } from '@/lib/publicAvailability';
-import { Timestamp } from 'firebase/firestore'; 
+import { bookAppointment, BookAppointmentRequestError } from '@/lib/bookingClient';
 import Link from 'next/link';
 import Image from 'next/image';
 import { 
@@ -88,6 +88,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [availabilityError, setAvailabilityError] = useState(false);
+  const [availabilityRefreshKey, setAvailabilityRefreshKey] = useState(0);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
@@ -98,6 +99,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [historyApps, setHistoryApps] = useState<AppointmentData[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loyaltyData, setLoyaltyData] = useState<LoyaltyData | null>(null);
+  const bookingIdempotencyKey = useRef<string | null>(null);
 
   const totalDuration = cart.reduce((acc, item) => acc + (item.durationMinutes || 30), 0);
   const totalPrice = cart.reduce((acc, item) => acc + parseFloat(item.price?.replace(',','.') || '0'), 0);
@@ -163,7 +165,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
     };
     fetchSlots();
     return () => abortController.abort();
-  }, [selectedDate, totalDuration, pageData, resolvedParams.slug, isSelectorOpen]);
+  }, [selectedDate, totalDuration, pageData, resolvedParams.slug, isSelectorOpen, availabilityRefreshKey]);
 
   const toggleCartItem = (item: LinkData) => {
       const exists = cart.find(i => i.title === item.title);
@@ -178,7 +180,11 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
       setTimeout(() => { document.getElementById('date-picker-section')?.scrollIntoView({ behavior: 'smooth' }); }, 100);
   };
 
-  const handleTimeClick = (time: string) => { setSelectedTime(time); setIsCheckoutOpen(true); };
+  const handleTimeClick = (time: string) => {
+      bookingIdempotencyKey.current = crypto.randomUUID();
+      setSelectedTime(time);
+      setIsCheckoutOpen(true);
+  };
 
   const handleCopyPix = () => {
       if (pageData?.pixKey) {
@@ -208,32 +214,38 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
           const [hours, minutes] = selectedTime.split(':').map(Number);
           const startDate = new Date(`${selectedDate}T00:00:00`);
           startDate.setHours(hours, minutes, 0, 0);
-          const endDate = new Date(startDate.getTime() + totalDuration * 60000);
-          const servicesString = cart.map(i => i.title).join(' + ');
-
-          const newAppointment: AppointmentData = {
-              pageSlug: resolvedParams.slug,
-              serviceId: 'multi-services', 
-              serviceName: servicesString, 
-              customerId: user.uid,
-              customerEmail: user.email || '',
-              customerPhoto: user.photoURL || '',
-              customerName,
-              customerPhone, 
-              startAt: Timestamp.fromDate(startDate),
-              endAt: Timestamp.fromDate(endDate),
-              status: 'pending', 
-              totalValue: totalPrice,
-              createdAt: Timestamp.now()
-          };
-          await createAppointment(newAppointment);
+          const idempotencyKey = bookingIdempotencyKey.current || crypto.randomUUID();
+          bookingIdempotencyKey.current = idempotencyKey;
+          const result = await bookAppointment(
+              {
+                  pageSlug: resolvedParams.slug,
+                  startAt: startDate.toISOString(),
+                  services: cart.map(i => i.title),
+                  customerName,
+                  customerPhone,
+                  idempotencyKey,
+              },
+              await user.getIdToken(),
+          );
 
           const phone = pageData.whatsapp?.replace(/\D/g, '') || '';
-          let msg = `*NOVO AGENDAMENTO 💅*\n\n👤 *Cliente:* ${customerName}\n📅 *Data:* ${startDate.toLocaleDateString('pt-BR')} às *${selectedTime}*\n✨ *Serviços:* ${servicesString}\n💰 *Total:* R$ ${totalPrice.toFixed(2)}`;
+          const confirmedStart = new Date(result.startAt);
+          let msg = `*NOVO AGENDAMENTO 💅*\n\n👤 *Cliente:* ${customerName}\n📅 *Data:* ${confirmedStart.toLocaleDateString('pt-BR')} às *${selectedTime}*\n✨ *Serviços:* ${result.serviceName}\n💰 *Total:* R$ ${result.totalValue.toFixed(2)}`;
           window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
           
+          bookingIdempotencyKey.current = null;
           setIsCheckoutOpen(false); setCart([]); setIsSelectorOpen(false);
-      } catch (error) { alert("Erro ao agendar."); } finally { setIsBooking(false); }
+      } catch (error) {
+          if (error instanceof BookAppointmentRequestError && error.code === 'SLOT_UNAVAILABLE') {
+              bookingIdempotencyKey.current = null;
+              setIsCheckoutOpen(false);
+              setSelectedTime(null);
+              setAvailabilityRefreshKey(value => value + 1);
+              alert("Este horário não está mais disponível. Escolha outro horário.");
+          } else {
+              alert("Erro ao agendar.");
+          }
+      } finally { setIsBooking(false); }
   };
 
   if (loading) return <MenuSkeleton />;

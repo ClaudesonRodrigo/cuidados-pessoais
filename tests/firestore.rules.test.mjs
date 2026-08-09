@@ -118,6 +118,9 @@ const seed = async () => {
       setDoc(doc(admin, "appointments/b-pending"), appointment({
         pageSlug: "salao-b", customerId: "customer-b", status: "pending",
       })),
+      setDoc(doc(admin, "bookingLocks/salao-a_4076035200000"), {
+        pageSlug: "salao-a", slotStart: START, appointmentId: "a-pending", createdAt: CREATED,
+      }),
       setDoc(doc(admin, "transactions/transaction-a"), transaction()),
       setDoc(doc(admin, "transactions/transaction-b"), transaction({ pageSlug: "salao-b" })),
       setDoc(doc(admin, "loyalty/salao-a_customer-a"), loyalty()),
@@ -281,8 +284,8 @@ test("appointment create público é negado", async () => {
   await assertFails(addDoc(collection(db("public"), "appointments"), appointment()));
 });
 
-test("customer autenticado cria appointment próprio pending", async () => {
-  await assertSucceeds(addDoc(collection(db("customerA"), "appointments"), appointment()));
+test("customer autenticado não cria appointment pelo Client SDK", async () => {
+  await assertFails(addDoc(collection(db("customerA"), "appointments"), appointment()));
 });
 
 test("appointment create com customerId falso é negado", async () => {
@@ -302,6 +305,20 @@ test("appointment create exige página existente e intervalo válido", async () 
   await assertFails(addDoc(collection(client, "appointments"), appointment({ pageSlug: "missing" })));
   await assertFails(addDoc(collection(client, "appointments"), appointment({ endAt: START })));
 });
+
+for (const profile of ["public", "customerA", "ownerA", "officialSuperAdmin"]) {
+  test(`bookingLocks não é acessível pelo Client SDK: ${profile}`, async () => {
+    const client = db(profile);
+    const existing = doc(client, "bookingLocks/salao-a_4076035200000");
+    await assertFails(getDoc(existing));
+    await assertFails(getDocs(collection(client, "bookingLocks")));
+    await assertFails(setDoc(doc(client, "bookingLocks/new-lock"), {
+      pageSlug: "salao-a", slotStart: START, appointmentId: "new", createdAt: CREATED,
+    }));
+    await assertFails(updateDoc(existing, { appointmentId: "other" }));
+    await assertFails(deleteDoc(existing));
+  });
+}
 
 test("cliente obtém appointment próprio e não de terceiro", async () => {
   const client = db("customerA");

@@ -409,7 +409,8 @@ test("página pública não importa nem chama a consulta Firestore direta", asyn
   assert.equal(source.includes("Agenda temporariamente indisponível"), true);
   assert.equal(source.includes("setAvailableSlots([])"), true);
   assert.equal(source.includes("setAvailabilityError(true)"), true);
-  assert.equal(source.includes("createAppointment(newAppointment)"), true);
+  assert.equal(source.includes("createAppointment(newAppointment)"), false);
+  assert.equal(source.includes("bookAppointment("), true);
   assert.equal(source.includes("getAppointmentsByCustomer"), true);
 });
 

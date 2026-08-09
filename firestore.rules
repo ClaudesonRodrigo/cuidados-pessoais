@@ -151,12 +151,7 @@ service cloud.firestore {
     }
 
     match /appointments/{appointmentId} {
-      allow create: if isSuperAdmin() ||
-                       (isAuthenticated() &&
-                        validAppointment(request.resource.data) &&
-                        request.resource.data.customerId == request.auth.uid &&
-                        request.resource.data.status == 'pending' &&
-                        pageExists(request.resource.data.pageSlug));
+      allow create: if false;
       allow get, list: if isSuperAdmin() ||
                           (isAuthenticated() &&
                            resource.data.customerId == request.auth.uid) ||
@@ -165,6 +160,10 @@ service cloud.firestore {
                        customerCanCancelAppointment() ||
                        ownerCanTransitionAppointment();
       allow delete: if isSuperAdmin();
+    }
+
+    match /bookingLocks/{lockId} {
+      allow read, write: if false;
     }
 
     match /transactions/{transactionId} {
