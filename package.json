@@ -12,6 +12,7 @@
     "lint": "eslint",
     "test:services": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/service-edit.test.mts",
     "test:onboarding": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/onboarding.test.mts",
+    "test:billing": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runBillingTests.mts",
     "test:availability": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runAvailabilityTests.mts",
     "test:booking": "firebase emulators:exec --only firestore --project demo-beautypro-booking \"node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/booking.emulator.test.mjs\"",
     "test:rules": "firebase emulators:exec --only firestore --project demo-beautypro-rules \"node --test tests/firestore.rules.test.mjs\""
@@ -29,7 +30,8 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-icons": "^5.5.0",
-    "recharts": "^3.5.1"
+    "recharts": "^3.5.1",
+    "stripe": "22.4.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
