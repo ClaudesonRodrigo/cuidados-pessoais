@@ -73,8 +73,15 @@ export const resolveCommercialEntitlement = ({
   }
 
   if (ownerBilling?.status === "past_due" && ownerBilling.pastDueSince) {
-    const graceEnd = new Date(ownerBilling.pastDueSince.getTime() + PAST_DUE_GRACE_MS);
-    if (Number.isFinite(graceEnd.getTime()) && now.getTime() < graceEnd.getTime()) {
+    const nowTime = now.getTime();
+    const pastDueTime = ownerBilling.pastDueSince.getTime();
+    const graceEnd = new Date(pastDueTime + PAST_DUE_GRACE_MS);
+    if (
+      Number.isFinite(nowTime) &&
+      Number.isFinite(pastDueTime) &&
+      pastDueTime <= nowTime &&
+      nowTime < graceEnd.getTime()
+    ) {
       return {
         state: "PAST_DUE_GRACE",
         source: "stripe",

@@ -69,8 +69,33 @@ test("past_due dentro de três dias recebe PAST_DUE_GRACE", () => {
   assert.equal(result.accessUntil?.getTime(), pastDueSince.getTime() + PAST_DUE_GRACE_MS);
 });
 
+test("past_due futuro fica BLOCKED", () => {
+  const pastDueSince = new Date(NOW.getTime() + 1);
+  assert.equal(resolve({ billing: billing("past_due", { pastDueSince }) }).state, "BLOCKED");
+});
+
+test("past_due iniciado exatamente agora recebe PAST_DUE_GRACE", () => {
+  assert.equal(
+    resolve({ billing: billing("past_due", { pastDueSince: NOW }) }).state,
+    "PAST_DUE_GRACE",
+  );
+});
+
+test("past_due com 71h59m59s recebe PAST_DUE_GRACE", () => {
+  const elapsed = PAST_DUE_GRACE_MS - 1_000;
+  assert.equal(
+    resolve({ billing: billing("past_due", { pastDueSince: new Date(NOW.getTime() - elapsed) }) }).state,
+    "PAST_DUE_GRACE",
+  );
+});
+
 test("past_due ao completar três dias fica BLOCKED", () => {
   const pastDueSince = new Date(NOW.getTime() - PAST_DUE_GRACE_MS);
+  assert.equal(resolve({ billing: billing("past_due", { pastDueSince }) }).state, "BLOCKED");
+});
+
+test("past_due acima de três dias fica BLOCKED", () => {
+  const pastDueSince = new Date(NOW.getTime() - PAST_DUE_GRACE_MS - 1);
   assert.equal(resolve({ billing: billing("past_due", { pastDueSince }) }).state, "BLOCKED");
 });
 
@@ -148,6 +173,47 @@ test("legacy grant prevalece sobre trial promocional", () => {
     promotionalTrial: promotionalTrial(new Date(NOW.getTime() + 86_400_000)),
   });
   assert.equal(result.source, "legacy_grant");
+});
+
+test("past_due bloqueado permite legacy grant ativo pela precedência", () => {
+  const result = resolve({ billing: billing("past_due"), legacyGrant });
+  assert.equal(result.state, "ACTIVE");
+  assert.equal(result.source, "legacy_grant");
+});
+
+test("past_due bloqueado permite trial promocional válido pela precedência", () => {
+  const result = resolve({
+    billing: billing("past_due"),
+    promotionalTrial: promotionalTrial(new Date(NOW.getTime() + 1)),
+  });
+  assert.equal(result.state, "TRIAL_ACTIVE");
+});
+
+test("legacy grant inativo não libera", () => {
+  assert.equal(resolve({ legacyGrant: { ...legacyGrant, active: false } }).state, "BLOCKED");
+});
+
+test("superadmin prevalece quando todas as fontes estão bloqueadas", () => {
+  const result = resolve({
+    identity: { uid: OFFICIAL_SUPERADMIN_UID },
+    billing: billing("unpaid", { ownerId: OFFICIAL_SUPERADMIN_UID }),
+    legacyGrant: { ...legacyGrant, ownerId: OFFICIAL_SUPERADMIN_UID, active: false },
+    promotionalTrial: {
+      ownerId: OFFICIAL_SUPERADMIN_UID,
+      endsAt: new Date(NOW.getTime() - 1),
+    },
+  });
+  assert.equal(result.state, "ADMIN_BYPASS");
+});
+
+test("Stripe active prevalece simultaneamente sobre legacy e trial", () => {
+  const result = resolve({
+    billing: billing("active"),
+    legacyGrant,
+    promotionalTrial: promotionalTrial(new Date(NOW.getTime() + 1)),
+  });
+  assert.equal(result.state, "ACTIVE");
+  assert.equal(result.source, "stripe");
 });
 
 test("projeções de outro owner nunca concedem acesso", () => {

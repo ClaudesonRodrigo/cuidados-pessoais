@@ -23,13 +23,36 @@ export type BillingRecord = {
   pastDueSince?: Date;
   createdAt: Date;
   updatedAt: Date;
+  lastStripeEventId?: string;
   lastStripeEventCreated?: number;
 };
 
-export type BillingProjectionUpdate = Omit<
-  BillingRecord,
-  "ownerId" | "createdAt" | "updatedAt"
->;
+/** Estado financeiro completo recuperado da Stripe, nunca um patch do frontend. */
+export type BillingStripeSnapshot = {
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  stripePriceId?: string;
+  status?: StripeBillingStatus;
+  currentPeriodEnd?: Date;
+  cancelAtPeriodEnd?: boolean;
+  pastDueSince?: Date;
+};
+
+export type StripeEventCursor = {
+  id: string;
+  created: number;
+};
+
+export type BillingProjectionDecision =
+  | "APPLIED"
+  | "DUPLICATE"
+  | "STALE"
+  | "REQUIRES_STRIPE_SYNC";
+
+export type BillingProjectionResult = {
+  decision: BillingProjectionDecision;
+  billing: BillingRecord | null;
+};
 
 export type LegacyCommercialGrant = {
   ownerId: string;

@@ -2,15 +2,9 @@ import "server-only";
 
 import Stripe from "stripe";
 
-let stripeServer: Stripe | undefined;
+import { getStripeSecretKey } from "./stripeServerConfig";
 
-const getStripeSecretKey = (): string => {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
-  if (!secretKey) {
-    throw new Error("Configuração server-side ausente: STRIPE_SECRET_KEY");
-  }
-  return secretKey;
-};
+let stripeServer: Stripe | undefined;
 
 export const getStripeServer = (): Stripe => {
   if (!stripeServer) {
