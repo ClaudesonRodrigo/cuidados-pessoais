@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22.12.0"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "next dev --turbopack",
@@ -22,7 +22,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@ducanh2912/next-pwa": "^10.2.9",
     "firebase": "^12.8.0",
-    "firebase-admin": "^14.2.0",
+    "firebase-admin": "13.10.0",
     "framer-motion": "^12.23.24",
     "next": "^16.0.7",
     "qrcode.react": "^4.2.0",
