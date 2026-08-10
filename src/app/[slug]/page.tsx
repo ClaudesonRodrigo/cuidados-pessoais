@@ -1,16 +1,16 @@
 // src/app/[slug]/page.tsx
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useRef, useState, use } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { signInWithGoogle, signOutUser } from '@/lib/authService';
 import { 
-  getPageDataBySlug, getAppointmentsByDate, createAppointment, getAppointmentsByCustomer,
+  getPageDataBySlug, getAppointmentsByCustomer,
   PageData, LinkData, AppointmentData, ScheduleData,
-  getCustomerLoyalty, LoyaltyData 
 } from "@/lib/pageService";
 import { generateAvailableSlots } from '@/lib/availability';
-import { Timestamp } from 'firebase/firestore'; 
+import { fetchPublicAvailability } from '@/lib/publicAvailability';
+import { bookAppointment, BookAppointmentRequestError } from '@/lib/bookingClient';
 import Link from 'next/link';
 import Image from 'next/image';
 import { 
@@ -19,7 +19,6 @@ import {
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeCanvas } from 'qrcode.react';
-import { LoyaltyCard } from '@/components/LoyaltyCard';
 
 // --- TIPOS ---
 interface ExtendedPageData extends PageData {
@@ -86,6 +85,8 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [selectedDate, setSelectedDate] = useState<string>(nextDays[0].fullDate); 
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState(false);
+  const [availabilityRefreshKey, setAvailabilityRefreshKey] = useState(0);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
@@ -95,17 +96,14 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyApps, setHistoryApps] = useState<AppointmentData[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [loyaltyData, setLoyaltyData] = useState<LoyaltyData | null>(null);
+  const bookingIdempotencyKey = useRef<string | null>(null);
 
   const totalDuration = cart.reduce((acc, item) => acc + (item.durationMinutes || 30), 0);
   const totalPrice = cart.reduce((acc, item) => acc + parseFloat(item.price?.replace(',','.') || '0'), 0);
 
   useEffect(() => {
       if (user?.displayName) setCustomerName(user.displayName);
-      if (user && resolvedParams.slug) {
-          getCustomerLoyalty(resolvedParams.slug, user.uid).then(setLoyaltyData);
-      }
-  }, [user, resolvedParams.slug]);
+  }, [user]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -126,8 +124,10 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
 
   useEffect(() => {
     if (!pageData || totalDuration === 0 || !isSelectorOpen) return;
+    const abortController = new AbortController();
     const fetchSlots = async () => {
         setLoadingSlots(true);
+        setAvailabilityError(false);
         const dateStr = `${selectedDate}T00:00:00`; 
         const startOfDay = new Date(dateStr);
         const endOfDay = new Date(dateStr);
@@ -138,13 +138,28 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
              setLoadingSlots(false);
              return;
         }
-        const busyAppointments = await getAppointmentsByDate(resolvedParams.slug, startOfDay, endOfDay);
-        const slots = generateAvailableSlots(startOfDay, totalDuration, busyAppointments, pageData.schedule);
-        setAvailableSlots(slots);
-        setLoadingSlots(false);
+        try {
+            const busyIntervals = await fetchPublicAvailability(
+                {
+                    pageSlug: resolvedParams.slug,
+                    startAt: startOfDay.toISOString(),
+                    endAt: endOfDay.toISOString(),
+                },
+                abortController.signal,
+            );
+            const slots = generateAvailableSlots(startOfDay, totalDuration, busyIntervals, pageData.schedule);
+            setAvailableSlots(slots);
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') return;
+            setAvailableSlots([]);
+            setAvailabilityError(true);
+        } finally {
+            if (!abortController.signal.aborted) setLoadingSlots(false);
+        }
     };
     fetchSlots();
-  }, [selectedDate, totalDuration, pageData, resolvedParams.slug, isSelectorOpen]);
+    return () => abortController.abort();
+  }, [selectedDate, totalDuration, pageData, resolvedParams.slug, isSelectorOpen, availabilityRefreshKey]);
 
   const toggleCartItem = (item: LinkData) => {
       const exists = cart.find(i => i.title === item.title);
@@ -159,7 +174,11 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
       setTimeout(() => { document.getElementById('date-picker-section')?.scrollIntoView({ behavior: 'smooth' }); }, 100);
   };
 
-  const handleTimeClick = (time: string) => { setSelectedTime(time); setIsCheckoutOpen(true); };
+  const handleTimeClick = (time: string) => {
+      bookingIdempotencyKey.current = crypto.randomUUID();
+      setSelectedTime(time);
+      setIsCheckoutOpen(true);
+  };
 
   const handleCopyPix = () => {
       if (pageData?.pixKey) {
@@ -189,32 +208,38 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
           const [hours, minutes] = selectedTime.split(':').map(Number);
           const startDate = new Date(`${selectedDate}T00:00:00`);
           startDate.setHours(hours, minutes, 0, 0);
-          const endDate = new Date(startDate.getTime() + totalDuration * 60000);
-          const servicesString = cart.map(i => i.title).join(' + ');
-
-          const newAppointment: AppointmentData = {
-              pageSlug: resolvedParams.slug,
-              serviceId: 'multi-services', 
-              serviceName: servicesString, 
-              customerId: user.uid,
-              customerEmail: user.email || '',
-              customerPhoto: user.photoURL || '',
-              customerName,
-              customerPhone, 
-              startAt: Timestamp.fromDate(startDate),
-              endAt: Timestamp.fromDate(endDate),
-              status: 'pending', 
-              totalValue: totalPrice,
-              createdAt: Timestamp.now()
-          };
-          await createAppointment(newAppointment);
+          const idempotencyKey = bookingIdempotencyKey.current || crypto.randomUUID();
+          bookingIdempotencyKey.current = idempotencyKey;
+          const result = await bookAppointment(
+              {
+                  pageSlug: resolvedParams.slug,
+                  startAt: startDate.toISOString(),
+                  services: cart.map(i => i.title),
+                  customerName,
+                  customerPhone,
+                  idempotencyKey,
+              },
+              await user.getIdToken(),
+          );
 
           const phone = pageData.whatsapp?.replace(/\D/g, '') || '';
-          let msg = `*NOVO AGENDAMENTO 💅*\n\n👤 *Cliente:* ${customerName}\n📅 *Data:* ${startDate.toLocaleDateString('pt-BR')} às *${selectedTime}*\n✨ *Serviços:* ${servicesString}\n💰 *Total:* R$ ${totalPrice.toFixed(2)}`;
+          const confirmedStart = new Date(result.startAt);
+          let msg = `*NOVO AGENDAMENTO 💅*\n\n👤 *Cliente:* ${customerName}\n📅 *Data:* ${confirmedStart.toLocaleDateString('pt-BR')} às *${selectedTime}*\n✨ *Serviços:* ${result.serviceName}\n💰 *Total:* R$ ${result.totalValue.toFixed(2)}`;
           window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
           
+          bookingIdempotencyKey.current = null;
           setIsCheckoutOpen(false); setCart([]); setIsSelectorOpen(false);
-      } catch (error) { alert("Erro ao agendar."); } finally { setIsBooking(false); }
+      } catch (error) {
+          if (error instanceof BookAppointmentRequestError && error.code === 'SLOT_UNAVAILABLE') {
+              bookingIdempotencyKey.current = null;
+              setIsCheckoutOpen(false);
+              setSelectedTime(null);
+              setAvailabilityRefreshKey(value => value + 1);
+              alert("Este horário não está mais disponível. Escolha outro horário.");
+          } else {
+              alert("Erro ao agendar.");
+          }
+      } finally { setIsBooking(false); }
   };
 
   if (loading) return <MenuSkeleton />;
@@ -256,12 +281,6 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         <h1 className="text-3xl font-bold mb-3 font-serif-luxury italic text-gray-900 leading-tight">{pageData.title}</h1>
         <p className="text-gray-400 text-sm max-w-xs mx-auto leading-relaxed font-medium mb-8">{pageData.bio}</p>
         
-        {user && loyaltyData && (
-            <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className="mb-8">
-                <LoyaltyCard points={loyaltyData.points} rewards={loyaltyData.totalRewards} customerName={user.displayName?.split(' ')[0] || 'Cliente VIP'} />
-            </motion.div>
-        )}
-
         {isClosed ? (
             <div className="bg-red-50 text-red-500 text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-full inline-flex items-center gap-2 border border-red-100 shadow-sm"><FaStoreSlash/> Salão Fechado</div>
         ) : (
@@ -348,6 +367,8 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                                     <div className="w-8 h-8 border-2 border-purple-500 rounded-full border-t-transparent animate-spin"/>
                                     <span className="text-[10px] font-black uppercase tracking-widest text-purple-200">Consultando Agenda...</span>
                                 </div>
+                            ) : availabilityError ? (
+                                <div className="text-center py-12 bg-amber-50/50 rounded-[2rem] border border-amber-100 border-dashed text-amber-600 text-xs font-bold uppercase tracking-widest">Agenda temporariamente indisponível</div>
                             ) : availableSlots.length > 0 ? (
                                 <div className="grid grid-cols-4 gap-3">
                                     {availableSlots.map(time => (

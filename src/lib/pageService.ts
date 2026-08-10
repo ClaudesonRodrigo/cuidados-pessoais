@@ -262,17 +262,6 @@ export const getAppointmentsByCustomer = async (pageSlug: string, customerId: st
     }
 };
 
-export const createAppointment = async (appointment: AppointmentData): Promise<string> => {
-  try {
-    const appsRef = collection(db, "appointments");
-    const docRef = await addDoc(appsRef, appointment);
-    return docRef.id;
-  } catch (error) {
-    console.error("Erro ao criar agendamento:", error);
-    throw error;
-  }
-};
-
 export const updateAppointmentStatus = async (appointmentId: string, status: 'confirmed' | 'cancelled' | 'completed'): Promise<void> => {
     try {
         const appRef = doc(db, "appointments", appointmentId);

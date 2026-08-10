@@ -1,7 +1,7 @@
 // src/lib/authService.ts
 import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./firebaseClient";
-import { doc, getDoc, setDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 
 const generateSlug = (name: string | null) => {
     const base = name ? name.toLowerCase().replace(/[^a-z0-9]/g, '-') : 'salao';
@@ -15,45 +15,36 @@ export const signInWithGoogle = async (role: 'owner' | 'customer' = 'owner') => 
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
 
-    const userRef = doc(db, "users", user.uid);
-    const userSnap = await getDoc(userRef);
-
-    if (!userSnap.exists()) {
-      let pageSlug = null;
-      let plan = role === 'owner' ? 'pro' : null;
-      let trialDeadline = null;
-
-      if (role === 'owner') {
-          const nextWeek = new Date();
-          nextWeek.setDate(nextWeek.getDate() + 7); 
-          trialDeadline = Timestamp.fromDate(nextWeek);
-          pageSlug = generateSlug(user.displayName);
-
-          const pageRef = doc(db, "pages", pageSlug);
-          await setDoc(pageRef, {
-              userId: user.uid,
-              slug: pageSlug,
-              title: user.displayName || "Meu Salão BeautyPro",
-              bio: "Agende seu horário e realce sua beleza!",
-              links: [],
-              createdAt: serverTimestamp(),
-              plan: 'pro',
-              trialDeadline: trialDeadline,
-              isOpen: true
-          });
-      }
-
-      await setDoc(userRef, {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        role: role,
-        plan: plan,
-        trialDeadline: trialDeadline,
-        pageSlug: pageSlug,
-        createdAt: serverTimestamp(),
-      });
+    const existingUser = await getDoc(doc(db, "users", user.uid));
+    const existingData = existingUser.exists() ? existingUser.data() : null;
+    const existingOwnerSlug =
+      existingData?.role === 'owner' && typeof existingData.pageSlug === 'string'
+        ? existingData.pageSlug
+        : null;
+    const body = role === 'owner'
+      ? {
+          accountType: 'owner',
+          slug: existingOwnerSlug || generateSlug(user.displayName),
+          title: user.displayName || "Meu Salão BeautyPro",
+          ...(user.displayName ? { displayName: user.displayName } : {}),
+          ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+        }
+      : {
+          accountType: 'customer',
+          ...(user.displayName ? { displayName: user.displayName } : {}),
+          ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+        };
+    const response = await fetch('/api/onboarding', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${await user.getIdToken()}`,
+      },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      throw new Error("Não foi possível concluir o onboarding.");
     }
 
     return user;

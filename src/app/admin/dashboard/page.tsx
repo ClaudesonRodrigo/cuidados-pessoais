@@ -22,6 +22,8 @@ import { SortableLinkItem } from '@/components/SortableLinkItem';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { ActionModal } from '@/components/ActionModal';
 import { TransactionModal } from '@/components/TransactionModal';
+import { isOfficialSuperAdminUid } from '@/lib/adminIdentity';
+import { updateServiceAtIndex } from '@/lib/serviceLinks';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
@@ -35,9 +37,7 @@ export default function DashboardPage() {
   const [pageSlug, setPageSlug] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
   
-  // Lógica de Poder do Sábio
-  const SUPER_ADMIN_EMAILS = ["claudesonborges@gmail.com"];
-  const isSuperAdmin = userData?.isSuperAdmin || userData?.role === 'admin' || SUPER_ADMIN_EMAILS.includes(user?.email || "");
+  const isSuperAdmin = isOfficialSuperAdminUid(user?.uid || '');
   
   const [adminViewId, setAdminViewId] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -113,9 +113,19 @@ export default function DashboardPage() {
 
   // --- FUNÇÕES DE BUSCA ---
   const fetchPageData = useCallback(async () => {
-    const idToFetch = adminViewId || user?.uid; 
+    if (isSuperAdmin && !adminViewId) {
+      setPageData(null);
+      setPageSlug(null);
+      setActiveTab('master');
+      setIsLoadingData(false);
+      return;
+    }
+
+    const idToFetch = adminViewId || user?.uid;
     if (idToFetch) {
       setIsLoadingData(true);
+      setPageData(null);
+      setPageSlug(null);
       try {
           const result = await getPageDataForUser(idToFetch);
           if (result) {
@@ -133,10 +143,15 @@ export default function DashboardPage() {
                 setSchedLunchStart(data.schedule.lunchStart || ''); setSchedLunchEnd(data.schedule.lunchEnd || '');
                 setSchedDays(data.schedule.workingDays || [1, 2, 3, 4, 5, 6]);
             }
+          } else if (isSuperAdmin) {
+            setActiveTab('master');
           }
-      } catch (error) { console.error(error); } finally { setIsLoadingData(false); }
+      } catch (error) {
+        console.error(error);
+        if (isSuperAdmin) setActiveTab('master');
+      } finally { setIsLoadingData(false); }
     }
-  }, [user, adminViewId]); 
+  }, [user, adminViewId, isSuperAdmin]);
 
   const fetchUpcoming = useCallback(async () => {
       if (!pageSlug) return;
@@ -149,6 +164,15 @@ export default function DashboardPage() {
   useEffect(() => { if (!loading && user) fetchPageData(); }, [user, loading, fetchPageData]);
   useEffect(() => { if (!loading && !user) router.push('/admin/login'); }, [user, loading, router]);
   useEffect(() => { if (activeTab === 'agenda' && pageSlug) fetchUpcoming(); }, [activeTab, pageSlug, fetchUpcoming]);
+  useEffect(() => {
+    setNewItemTitle('');
+    setNewItemPrice('');
+    setNewItemDesc('');
+    setNewItemImage('');
+    setNewItemCat('');
+    setNewItemDuration('30');
+    setEditingIndex(null);
+  }, [adminViewId]);
 
   useEffect(() => {
     if (user && isSuperAdmin && activeTab === 'master') {
@@ -164,21 +188,85 @@ export default function DashboardPage() {
 
   // --- HANDLERS DE AÇÕES (CORRIGIDO) ---
 
-  const handleAddItem = async (e: FormEvent) => {
+  const resetServiceForm = () => {
+    setNewItemTitle('');
+    setNewItemPrice('');
+    setNewItemDesc('');
+    setNewItemImage('');
+    setNewItemCat('');
+    setNewItemDuration('30');
+    setEditingIndex(null);
+  };
+
+  const handleEditItem = (link: LinkData, index: number) => {
+    setEditingIndex(index);
+    setNewItemTitle(link.title);
+    setNewItemPrice(link.price || '');
+    setNewItemDesc(link.description || '');
+    setNewItemImage(link.imageUrl || '');
+    setNewItemCat(link.category || '');
+    setNewItemDuration(String(link.durationMinutes || 30));
+    document.getElementById('service-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const handleSubmitItem = async (e: FormEvent) => {
     e.preventDefault();
     if (!pageSlug || !newItemTitle) return;
     const current = pageData?.links || [];
-    if (!isProPlan && current.length >= 8) return showToast("Limite plano FREE atingido.", 'error');
-    const newItem: LinkData = { title: newItemTitle, url: '', type: 'service', order: current.length + 1, clicks: 0, price: newItemPrice, description: newItemDesc, imageUrl: newItemImage, category: newItemCat, durationMinutes: parseInt(newItemDuration) || 30 };
-    await addLinkToPage(pageSlug, newItem);
-    setNewItemTitle(''); setNewItemPrice(''); setNewItemDesc(''); setNewItemImage(''); setNewItemCat(''); setNewItemDuration('30');
-    showToast("Procedimento adicionado!"); fetchPageData();
+    const durationMinutes = Number.parseInt(newItemDuration, 10);
+    if (!Number.isInteger(durationMinutes) || durationMinutes <= 0 || durationMinutes > 24 * 60) {
+      return showToast("Duração inválida.", 'error');
+    }
+    if (editingIndex === null && !isProPlan && current.length >= 8) {
+      return showToast("Limite plano FREE atingido.", 'error');
+    }
+
+    const editableFields = {
+      title: newItemTitle,
+      price: newItemPrice,
+      description: newItemDesc,
+      imageUrl: newItemImage,
+      category: newItemCat,
+      durationMinutes,
+    };
+
+    try {
+      if (editingIndex === null) {
+        const newItem: LinkData = {
+          ...editableFields,
+          url: '',
+          type: 'service',
+          order: current.length + 1,
+          clicks: 0,
+        };
+        await addLinkToPage(pageSlug, newItem);
+      } else {
+        await updateLinksOnPage(
+          pageSlug,
+          updateServiceAtIndex(current, editingIndex, editableFields),
+        );
+      }
+      const successMessage = editingIndex === null
+        ? "Procedimento adicionado!"
+        : "Procedimento atualizado!";
+      resetServiceForm();
+      showToast(successMessage);
+      await fetchPageData();
+    } catch (error) {
+      console.error(error);
+      showToast("Não foi possível salvar o procedimento.", 'error');
+    }
   };
 
   const handleDeleteItem = async (link: LinkData) => {
      setConfirmData({
          isOpen: true, title: "Remover", desc: `Apagar "${link.title}"?`, isDanger: true, confirmText: "Apagar",
-         action: async () => { await deleteLinkFromPage(pageSlug!, link); fetchPageData(); showToast("Removido."); }
+         action: async () => {
+           await deleteLinkFromPage(pageSlug!, link);
+           resetServiceForm();
+           await fetchPageData();
+           showToast("Removido.");
+         }
      })
   };
 
@@ -277,7 +365,7 @@ export default function DashboardPage() {
             <span className="text-gray-900">Beauty<span className="text-purple-500 font-light">Pro</span></span>
          </div>
          <div className="flex gap-4 items-center">
-             {adminViewId && <button onClick={() => { setAdminViewId(null); fetchPageData(); }} className="bg-purple-600 text-white px-5 py-2.5 rounded-full text-[10px] font-black uppercase flex items-center gap-2 shadow-xl hover:bg-purple-700 transition active:scale-95"><FaArrowLeft/> Voltar ao Painel</button>}
+             {adminViewId && <button onClick={() => { setAdminViewId(null); setActiveTab('master'); }} className="bg-purple-600 text-white px-5 py-2.5 rounded-full text-[10px] font-black uppercase flex items-center gap-2 shadow-xl hover:bg-purple-700 transition active:scale-95"><FaArrowLeft/> Voltar ao Painel</button>}
              {pageSlug && <a href={`/${pageSlug}`} target="_blank" className="bg-purple-50 text-purple-600 p-3 rounded-full hover:bg-purple-100 transition shadow-sm"><FaExternalLinkAlt size={14}/></a>}
              <button onClick={signOutUser} className="text-gray-400 hover:text-red-500 transition font-bold text-sm">Sair</button>
          </div>
@@ -295,13 +383,23 @@ export default function DashboardPage() {
       )}
 
       <main className="max-w-4xl mx-auto py-8 px-4 space-y-8">
+
+        {isSuperAdmin && !pageSlug && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 p-5 rounded-2xl text-sm font-bold">
+            {adminViewId
+              ? 'A conta selecionada não possui uma página. Selecione outro tenant na aba Master.'
+              : 'Selecione explicitamente um tenant na aba Master para editar foto, serviços ou perfil.'}
+          </div>
+        )}
         
         <div className="flex bg-gray-100 p-1.5 rounded-2xl overflow-x-auto shadow-inner">
             {[
-              { id: 'agenda', label: 'Agenda', icon: <FaCalendarAlt/> },
-              { id: 'financial', label: 'Financeiro', icon: <FaFileInvoiceDollar/> },
-              { id: 'services', label: 'Serviços', icon: <FaList/> },
-              { id: 'profile', label: 'Perfil', icon: <FaUserCog/> },
+              ...(!isSuperAdmin || pageSlug ? [
+                { id: 'agenda', label: 'Agenda', icon: <FaCalendarAlt/> },
+                { id: 'financial', label: 'Financeiro', icon: <FaFileInvoiceDollar/> },
+                { id: 'services', label: 'Serviços', icon: <FaList/> },
+                { id: 'profile', label: 'Perfil', icon: <FaUserCog/> },
+              ] : []),
               ...(isSuperAdmin ? [{ id: 'master', label: 'Master', icon: <FaShieldAlt/> }] : [])
             ].map(t => (
                 <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex-1 min-w-[100px] py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex justify-center items-center gap-2 transition-all ${activeTab === t.id ? 'bg-white shadow-lg text-purple-600 scale-[1.02]' : 'text-gray-400 hover:text-gray-600'}`}>
@@ -411,7 +509,61 @@ export default function DashboardPage() {
         {activeTab === 'services' && (
              <div className="animate-beauty space-y-8">
                  {!isProPlan && ( <div onClick={() => setIsUpgradeModalOpen(true)} className="bg-gray-900 text-white p-8 rounded-[2.5rem] shadow-2xl border border-white/5 relative overflow-hidden group"> <div className="absolute top-0 right-0 p-10 opacity-5 group-hover:scale-110 duration-700"><FaCrown size={150}/></div> <div className="relative z-10"> <h3 className="font-black text-purple-400 uppercase tracking-widest text-xs flex items-center gap-2 mb-2"><FaCrown/> Plano Beauty Free</h3> <p className="text-sm text-gray-400 font-medium">Libere serviços ilimitados e fotos profissionais no seu cardápio.</p> </div> <button className="bg-purple-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl relative z-10">Ver Planos</button> </div> )}
-                 <div className="bg-white p-8 rounded-[2.5rem] border border-purple-50 shadow-xl shadow-purple-50"> <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-8 flex gap-2 items-center"><FaPlus className="text-green-500"/> Novo Procedimento</h3> <form onSubmit={handleAddItem} className="space-y-6"> <div className="flex flex-col sm:flex-row gap-6"> <div className="w-24 h-24 bg-purple-50 rounded-[1.5rem] border-2 border-dashed border-purple-100 flex items-center justify-center relative group"> {newItemImage ? <Image src={newItemImage} alt="Serviço" fill className="object-cover rounded-[1.5rem]" sizes="96px"/> : <FaCamera className="text-purple-200 text-xl"/>} <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleItemImageUpload} /> </div> <div className="flex-1 space-y-4"> <div className="flex gap-4"><input className="flex-1 bg-gray-50 border border-purple-50 p-4 rounded-2xl text-sm font-bold outline-none focus:border-purple-400" placeholder="Nome do Procedimento" value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} required /><input className="w-32 bg-gray-50 border border-purple-50 p-4 rounded-2xl text-sm font-bold outline-none focus:border-purple-400" placeholder="Preço R$" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)} /></div> <div className="flex gap-4"><input className="flex-1 bg-gray-50 border border-purple-50 p-4 rounded-2xl text-sm font-bold outline-none focus:border-purple-400" placeholder="Categoria" value={newItemCat} onChange={e => setNewItemCat(e.target.value)} /><div className="flex items-center bg-gray-50 border border-purple-50 rounded-2xl px-4 w-32 shadow-inner"><FaClock className="text-purple-300 mr-2"/><input type="number" className="w-full bg-transparent p-4 text-xs font-bold outline-none" value={newItemDuration} onChange={e => setNewItemDuration(e.target.value)} /></div></div> </div> </div> <button type="submit" className="w-full bg-gray-900 text-white font-black py-5 rounded-[1.8rem] text-[10px] uppercase tracking-[0.3em] shadow-xl hover:bg-black transition active:scale-[0.98]">Adicionar Procedimento</button> </form> </div> <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}> <SortableContext items={pageData?.links?.map((l, i) => `item-${(l.title || 'item').replace(/[^a-zA-Z0-9]/g, '')}-${i}`) || []} strategy={verticalListSortingStrategy}> <div className="space-y-4"> {pageData?.links?.map((link, index) => ( <SortableLinkItem key={index} id={`item-${(link.title || 'item').replace(/[^a-zA-Z0-9]/g, '')}-${index}`} link={link} index={index} onEdit={()=>{}} onDelete={() => handleDeleteItem(link)} editingIndex={editingIndex} /> ))} </div> </SortableContext> </DndContext> 
+                 <div id="service-form" className="bg-white p-8 rounded-[2.5rem] border border-purple-50 shadow-xl shadow-purple-50">
+                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-8 flex gap-2 items-center">
+                     {editingIndex === null ? <FaPlus className="text-green-500"/> : <FaSave className="text-blue-500"/>}
+                     {editingIndex === null ? 'Novo Procedimento' : 'Editar Procedimento'}
+                   </h3>
+                   <form onSubmit={handleSubmitItem} className="space-y-6">
+                     <div className="flex flex-col sm:flex-row gap-6">
+                       <div className="w-24 h-24 bg-purple-50 rounded-[1.5rem] border-2 border-dashed border-purple-100 flex items-center justify-center relative group">
+                         {newItemImage ? <Image src={newItemImage} alt="Serviço" fill className="object-cover rounded-[1.5rem]" sizes="96px"/> : <FaCamera className="text-purple-200 text-xl"/>}
+                         <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleItemImageUpload} />
+                       </div>
+                       <div className="flex-1 space-y-4">
+                         <div className="flex gap-4">
+                           <input className="flex-1 bg-gray-50 border border-purple-50 p-4 rounded-2xl text-sm font-bold outline-none focus:border-purple-400" placeholder="Nome do Procedimento" value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} required />
+                           <input className="w-32 bg-gray-50 border border-purple-50 p-4 rounded-2xl text-sm font-bold outline-none focus:border-purple-400" placeholder="Preço R$" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)} />
+                         </div>
+                         <div className="flex gap-4">
+                           <input className="flex-1 bg-gray-50 border border-purple-50 p-4 rounded-2xl text-sm font-bold outline-none focus:border-purple-400" placeholder="Categoria" value={newItemCat} onChange={e => setNewItemCat(e.target.value)} />
+                           <div className="flex items-center bg-gray-50 border border-purple-50 rounded-2xl px-4 w-32 shadow-inner">
+                             <FaClock className="text-purple-300 mr-2"/>
+                             <input type="number" min="1" max="1440" className="w-full bg-transparent p-4 text-xs font-bold outline-none" value={newItemDuration} onChange={e => setNewItemDuration(e.target.value)} />
+                           </div>
+                         </div>
+                         <textarea className="w-full bg-gray-50 border border-purple-50 p-4 rounded-2xl text-sm font-medium outline-none focus:border-purple-400" placeholder="Descrição" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} rows={3} />
+                       </div>
+                     </div>
+                     <div className="flex gap-3">
+                       {editingIndex !== null && (
+                         <button type="button" onClick={resetServiceForm} className="flex-1 bg-gray-100 text-gray-600 font-black py-5 rounded-[1.8rem] text-[10px] uppercase tracking-[0.3em] hover:bg-gray-200 transition active:scale-[0.98]">
+                           Cancelar
+                         </button>
+                       )}
+                       <button type="submit" className="flex-1 bg-gray-900 text-white font-black py-5 rounded-[1.8rem] text-[10px] uppercase tracking-[0.3em] shadow-xl hover:bg-black transition active:scale-[0.98]">
+                         {editingIndex === null ? 'Adicionar Procedimento' : 'Salvar Alterações'}
+                       </button>
+                     </div>
+                   </form>
+                 </div>
+                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                   <SortableContext items={pageData?.links?.map((l, i) => `item-${(l.title || 'item').replace(/[^a-zA-Z0-9]/g, '')}-${i}`) || []} strategy={verticalListSortingStrategy}>
+                     <div className="space-y-4">
+                       {pageData?.links?.map((link, index) => (
+                         <SortableLinkItem
+                           key={index}
+                           id={`item-${(link.title || 'item').replace(/[^a-zA-Z0-9]/g, '')}-${index}`}
+                           link={link}
+                           index={index}
+                           onEdit={() => handleEditItem(link, index)}
+                           onDelete={() => handleDeleteItem(link)}
+                           editingIndex={editingIndex}
+                         />
+                       ))}
+                     </div>
+                   </SortableContext>
+                 </DndContext>
              </div>
         )}
 
