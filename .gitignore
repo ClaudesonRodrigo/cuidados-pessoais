@@ -32,3 +32,5 @@
 .DS_Store
 # Local Netlify folder
 .netlify
+.vercel
+.env*
