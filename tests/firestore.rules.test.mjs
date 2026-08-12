@@ -129,6 +129,12 @@ const seed = async () => {
       })),
       setDoc(doc(admin, "services/legacy-service"), { name: "Legacy" }),
       setDoc(doc(admin, "barbershops/legacy-shop"), { name: "Legacy" }),
+      setDoc(doc(admin, "billing/owner-a"), {
+        ownerId: "owner-a", pageSlug: "salao-a", status: "active",
+      }),
+      setDoc(doc(admin, "billingCheckoutState/owner-a"), {
+        ownerId: "owner-a", pageSlug: "salao-a", operationState: "READY",
+      }),
     ];
     await Promise.all(writes);
   });
@@ -171,6 +177,20 @@ test("updateUserPlan funciona somente para o UID oficial nas duas coleções", a
   await assertFails(updateDoc(doc(commonOwner, "users/owner-a"), { plan: "pro", trialDeadline: END }));
   await assertFails(updateDoc(doc(commonOwner, "pages/salao-a"), { plan: "pro", trialDeadline: END }));
 });
+
+for (const profile of ["customerA", "ownerA", "officialSuperAdmin"]) {
+  for (const collectionName of ["billing", "billingCheckoutState"]) {
+    test(`${profile} não acessa ${collectionName} pelo Client SDK`, async () => {
+      const client = db(profile);
+      const existing = doc(client, `${collectionName}/owner-a`);
+      await assertFails(getDoc(existing));
+      await assertFails(getDocs(collection(client, collectionName)));
+      await assertFails(setDoc(doc(client, `${collectionName}/new`), { ownerId: "owner-a" }));
+      await assertFails(updateDoc(existing, { ownerId: "forged" }));
+      await assertFails(deleteDoc(existing));
+    });
+  }
+}
 
 for (const profile of ["fakeAdminByRole", "fakeSuperAdminField", "fakeAdminEmail"]) {
   test(`${profile} não recebe privilégio administrativo`, async () => {
