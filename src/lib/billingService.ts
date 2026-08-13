@@ -8,7 +8,10 @@ import {
 } from "./billingServiceCore";
 
 export { BILLING_COLLECTION } from "./billingServiceCore";
-export type { ApplyStripeBillingSnapshotInput } from "./billingServiceCore";
+export type {
+  ApplyStripeBillingSnapshotInput,
+  ReconcileStripeBillingSnapshotInput,
+} from "./billingServiceCore";
 
 const adminBillingStore: BillingProjectionStore = {
   async get(ownerId) {
@@ -35,3 +38,4 @@ const adminBillingService = createBillingService({
 
 export const getBillingByOwnerId = adminBillingService.getBillingByOwnerId;
 export const applyStripeBillingSnapshot = adminBillingService.applyStripeBillingSnapshot;
+export const reconcileStripeBillingSnapshot = adminBillingService.reconcileStripeBillingSnapshot;

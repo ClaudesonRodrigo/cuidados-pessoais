@@ -45,6 +45,7 @@ export type StripeEventCursor = {
 
 export type BillingProjectionDecision =
   | "APPLIED"
+  | "RECONCILED"
   | "DUPLICATE"
   | "STALE"
   | "REQUIRES_STRIPE_SYNC";

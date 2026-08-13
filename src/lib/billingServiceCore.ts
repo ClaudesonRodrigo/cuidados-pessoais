@@ -42,6 +42,8 @@ export type ApplyStripeBillingSnapshotInput = {
   snapshot: BillingStripeSnapshot;
 };
 
+export type ReconcileStripeBillingSnapshotInput = ApplyStripeBillingSnapshotInput;
+
 export const assertValidOwnerId = (ownerId: string): void => {
   if (
     typeof ownerId !== "string" ||
@@ -214,6 +216,19 @@ const completeProjectionDocument = (
   lastStripeEventCreated: event.created,
 });
 
+const transactionalSnapshot = (
+  snapshot: BillingStripeSnapshot,
+  current: BillingRecord | null,
+  now: Date,
+): BillingStripeSnapshot => ({
+  ...snapshot,
+  ...(snapshot.status === "past_due"
+    ? { pastDueSince: current?.status === "past_due" && current.pastDueSince
+        ? current.pastDueSince
+        : now }
+    : { pastDueSince: undefined }),
+});
+
 const projectEvent = (
   ownerId: string,
   pageSlug: string,
@@ -223,6 +238,10 @@ const projectEvent = (
   currentData: DocumentData | null,
 ): BillingProjectionMutation<BillingProjectionResult> => {
   const current = currentData ? normalizeBillingRecord(ownerId, currentData) : null;
+
+  if (current && current.pageSlug !== pageSlug) {
+    throw new Error("pageSlug divergente para owner de billing.");
+  }
 
   if (current?.lastStripeEventId === event.id) {
     return { result: { decision: "DUPLICATE", billing: current } };
@@ -237,14 +256,10 @@ const projectEvent = (
     }
   }
 
-  if (current && current.pageSlug !== pageSlug) {
-    throw new Error("pageSlug divergente para owner de billing.");
-  }
-
   const replacement = completeProjectionDocument(
     ownerId,
     current?.pageSlug ?? pageSlug,
-    snapshot,
+    transactionalSnapshot(snapshot, current, now),
     event,
     current?.createdAt ?? now,
     now,
@@ -253,6 +268,43 @@ const projectEvent = (
   return {
     result: {
       decision: "APPLIED",
+      billing: normalizeBillingRecord(ownerId, replacement),
+    },
+    replacement,
+  };
+};
+
+const reconcileEvent = (
+  ownerId: string,
+  pageSlug: string,
+  event: StripeEventCursor,
+  snapshot: BillingStripeSnapshot,
+  now: Date,
+  currentData: DocumentData | null,
+): BillingProjectionMutation<BillingProjectionResult> => {
+  const current = currentData ? normalizeBillingRecord(ownerId, currentData) : null;
+  if (!current) throw new Error("Projeção de billing ausente para reconciliação.");
+  if (current.pageSlug !== pageSlug) {
+    throw new Error("pageSlug divergente para owner de billing.");
+  }
+  if (current.lastStripeEventId === event.id) {
+    return { result: { decision: "DUPLICATE", billing: current } };
+  }
+  if (current.lastStripeEventCreated !== event.created) {
+    throw new Error("Cursor incompatível para reconciliação canônica.");
+  }
+
+  const replacement = completeProjectionDocument(
+    ownerId,
+    current.pageSlug,
+    transactionalSnapshot(snapshot, current, now),
+    event,
+    current.createdAt,
+    now,
+  );
+  return {
+    result: {
+      decision: "RECONCILED",
       billing: normalizeBillingRecord(ownerId, replacement),
     },
     replacement,
@@ -284,6 +336,26 @@ export const createBillingService = ({ store, now }: BillingServiceDependencies)
 
     return store.runTransaction(ownerId, (current) =>
       projectEvent(ownerId, pageSlug, event, snapshot, currentTime, current),
+    );
+  },
+
+  async reconcileStripeBillingSnapshot({
+    ownerId,
+    pageSlug,
+    event,
+    snapshot,
+  }: ReconcileStripeBillingSnapshotInput): Promise<BillingProjectionResult> {
+    assertValidOwnerId(ownerId);
+    assertValidPageSlug(pageSlug);
+    assertValidEvent(event);
+    assertValidBillingStripeSnapshot(snapshot);
+
+    const currentTime = now();
+    if (!(currentTime instanceof Date) || !Number.isFinite(currentTime.getTime())) {
+      throw new Error("Horário server-side inválido para billing.");
+    }
+    return store.runTransaction(ownerId, (current) =>
+      reconcileEvent(ownerId, pageSlug, event, snapshot, currentTime, current),
     );
   },
 });
