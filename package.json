@@ -15,6 +15,7 @@
     "test:billing": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runBillingTests.mts",
     "test:checkout": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runCheckoutTests.mts",
     "test:checkout-ui": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runUpgradeCheckoutUiTests.mts",
+    "test:webhook": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runWebhookTests.mts",
     "test:availability": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/runAvailabilityTests.mts",
     "test:booking": "firebase emulators:exec --only firestore --project demo-beautypro-booking \"node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/booking.emulator.test.mjs\"",
     "test:rules": "firebase emulators:exec --only firestore --project demo-beautypro-rules \"node --test tests/firestore.rules.test.mjs\""

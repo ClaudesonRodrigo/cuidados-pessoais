@@ -78,7 +78,18 @@ const setup = (initial?: Data) => {
     snapshot,
     ...overrides,
   });
-  return { ...memory, apply, service };
+  const reconcile = (
+    stripeEvent: StripeEventCursor,
+    snapshot: BillingStripeSnapshot,
+    overrides: Partial<{ ownerId: string; pageSlug: string }> = {},
+  ) => service.reconcileStripeBillingSnapshot({
+    ownerId: OWNER_ID,
+    pageSlug: PAGE_SLUG,
+    event: stripeEvent,
+    snapshot,
+    ...overrides,
+  });
+  return { ...memory, apply, reconcile, service };
 };
 
 test("evento mais novo é aplicado atomicamente", async () => {
@@ -108,11 +119,52 @@ test("evento anterior é STALE e não regride projeção", async () => {
   assert.equal(context.metrics.writes, 0);
 });
 
+test("evento antigo após canceled não reativa assinatura", async () => {
+  const context = setup(storedBilling({ status: "canceled" }));
+  const result = await context.apply(event("evt_oldactive01", 999), stripeSnapshot("active"));
+  assert.equal(result.decision, "STALE");
+  assert.equal(context.documents.get(OWNER_ID)?.status, "canceled");
+  assert.equal(context.metrics.writes, 0);
+});
+
 test("IDs diferentes no mesmo segundo exigem sincronização e não escrevem", async () => {
   const context = setup(storedBilling());
   const result = await context.apply(event("evt_collision01", 1_000), stripeSnapshot("canceled"));
   assert.equal(result.decision, "REQUIRES_STRIPE_SYNC");
   assert.equal(context.documents.get(OWNER_ID)?.status, "active");
+  assert.equal(context.metrics.writes, 0);
+});
+
+test("reconciliação canônica substitui snapshot no mesmo segundo e avança o event ID", async () => {
+  const context = setup(storedBilling());
+  const result = await context.reconcile(
+    event("evt_collision02", 1_000),
+    stripeSnapshot("canceled", { stripeCustomerId: "cus_owner_a" }),
+  );
+  assert.equal(result.decision, "RECONCILED");
+  assert.equal(result.billing?.status, "canceled");
+  assert.equal(result.billing?.lastStripeEventId, "evt_collision02");
+  assert.equal(result.billing?.lastStripeEventCreated, 1_000);
+  assert.equal(context.metrics.writes, 1);
+});
+
+test("reconciliação canônica rejeita cursor fora da colisão", async () => {
+  const context = setup(storedBilling());
+  await assert.rejects(
+    context.reconcile(event("evt_collision03", 1_001), stripeSnapshot("active")),
+    /Cursor incompatível/,
+  );
+  assert.equal(context.metrics.writes, 0);
+});
+
+test("reconciliação canônica não permite mudança de page/owner binding", async () => {
+  const context = setup(storedBilling());
+  await assert.rejects(
+    context.reconcile(event("evt_collision04", 1_000), stripeSnapshot("active"), {
+      pageSlug: "salao-b",
+    }),
+    /pageSlug divergente/,
+  );
   assert.equal(context.metrics.writes, 0);
 });
 
@@ -162,6 +214,47 @@ test("transição para active limpa pastDueSince antigo", async () => {
   await context.apply(event("evt_recovered01", 1_001), stripeSnapshot("active"));
   assert.equal("pastDueSince" in context.documents.get(OWNER_ID)!, false);
 });
+
+test("primeira entrada past_due recebe pastDueSince server-side dentro da transação", async () => {
+  const context = setup(storedBilling({ status: "active" }));
+  await context.apply(
+    event("evt_firstpastdue", 1_001),
+    stripeSnapshot("past_due", { pastDueSince: new Date("2000-01-01T00:00:00.000Z") }),
+  );
+  assert.deepEqual(context.documents.get(OWNER_ID)?.pastDueSince, NOW);
+});
+
+test("past_due repetido preserva o primeiro pastDueSince", async () => {
+  const firstPastDue = new Date("2099-02-09T00:00:00.000Z");
+  const context = setup(storedBilling({ status: "past_due", pastDueSince: firstPastDue }));
+  await context.apply(event("evt_repeatpast01", 1_001), stripeSnapshot("past_due"));
+  assert.deepEqual(context.documents.get(OWNER_ID)?.pastDueSince, firstPastDue);
+});
+
+test("entradas past_due concorrentes convergem para um único pastDueSince transacional", async () => {
+  const context = setup(storedBilling({ status: "active" }));
+  await Promise.all([
+    context.apply(event("evt_concurrent01", 1_001), stripeSnapshot("past_due")),
+    context.apply(event("evt_concurrent02", 1_002), stripeSnapshot("past_due")),
+  ]);
+  assert.deepEqual(context.documents.get(OWNER_ID)?.pastDueSince, NOW);
+});
+
+for (const recoveredStatus of [
+  "active", "trialing", "unpaid", "canceled", "paused", "incomplete", "incomplete_expired",
+] as const) {
+  test(`past_due → ${recoveredStatus} remove pastDueSince`, async () => {
+    const context = setup(storedBilling({
+      status: "past_due",
+      pastDueSince: new Date("2099-02-09T00:00:00.000Z"),
+    }));
+    await context.apply(
+      event(`evt_clear${recoveredStatus.replaceAll("_", "")}0001`, 1_001),
+      stripeSnapshot(recoveredStatus),
+    );
+    assert.equal("pastDueSince" in context.documents.get(OWNER_ID)!, false);
+  });
+}
 
 test("createdAt é preservado e updatedAt usa horário server-side", async () => {
   const createdAt = new Date("2090-01-01T00:00:00.000Z");
