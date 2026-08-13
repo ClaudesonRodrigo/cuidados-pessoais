@@ -174,27 +174,26 @@ const resolveTenant = async (
   validateMetadataAgreement(subscription, customer);
   const bindings = await dependencies.accounts.findBindings(customer.id, subscription.id);
 
-  let ownerId = singleEvidence([
+  const ownerId = singleEvidence(bindings.map((binding) => binding.ownerId), "owner");
+  const bindingPageSlug = singleEvidence(bindings.map((binding) => binding.pageSlug), "page");
+  if (!ownerId || !bindingPageSlug) {
+    throw new WebhookConflictError("Binding server-side canônico não resolvido.");
+  }
+
+  singleEvidence([
+    ownerId,
     metadataValue(subscription.metadata, "beautyProOwnerId"),
     metadataValue(customer.metadata, "beautyProOwnerId"),
-    ...bindings.map((binding) => binding.ownerId),
   ], "owner");
-  let pageSlug = singleEvidence([
+  const pageSlug = singleEvidence([
+    bindingPageSlug,
     metadataValue(subscription.metadata, "beautyProPageSlug"),
     metadataValue(customer.metadata, "beautyProPageSlug"),
-    ...bindings.map((binding) => binding.pageSlug),
-  ], "page");
-
-  if (!ownerId && pageSlug) {
-    const page = await dependencies.accounts.getPage(pageSlug);
-    ownerId = typeof page?.userId === "string" ? page.userId : undefined;
-  }
-  if (!ownerId) throw new WebhookConflictError("Owner canônico não resolvido.");
+  ], "page")!;
 
   const user = await dependencies.accounts.getUser(ownerId);
   const userPageSlug = typeof user?.pageSlug === "string" ? user.pageSlug : undefined;
-  pageSlug = singleEvidence([pageSlug, userPageSlug], "page");
-  if (!pageSlug) throw new WebhookConflictError("Page canônica não resolvida.");
+  singleEvidence([pageSlug, userPageSlug], "page");
 
   const page = await dependencies.accounts.getPage(pageSlug);
   if (!user || userPageSlug !== pageSlug || page?.userId !== ownerId) {
@@ -205,6 +204,12 @@ const resolveTenant = async (
   const billing = await dependencies.billing.getBillingByOwnerId(ownerId);
   for (const binding of [...bindings, ...(checkoutState ? [checkoutState] : []), ...(billing ? [billing] : [])]) {
     assertBinding(binding, ownerId, pageSlug, customer.id, subscription.id);
+  }
+  const trustedCheckoutBinding = checkoutState?.stripeCustomerId === customer.id;
+  const trustedBillingBinding = billing?.stripeCustomerId === customer.id &&
+    billing.stripeSubscriptionId === subscription.id;
+  if (!trustedCheckoutBinding && !trustedBillingBinding) {
+    throw new WebhookConflictError("Bootstrap financeiro sem binding server-side confiável.");
   }
   return { ownerId, pageSlug };
 };
@@ -243,6 +248,27 @@ export type WebhookSyncResult = {
   result: "IGNORED" | BillingProjectionResult["decision"];
 };
 
+const loadCanonicalState = async (
+  subscriptionId: string,
+  dependencies: WebhookDependencies,
+  config: WebhookServerConfig,
+): Promise<{
+  ownerId: string;
+  pageSlug: string;
+  snapshot: BillingStripeSnapshot;
+}> => {
+  const subscription = await dependencies.stripe.retrieveSubscription(subscriptionId);
+  if (subscription.id !== subscriptionId) {
+    throw new WebhookConflictError("Subscription recuperada divergente.");
+  }
+  const customer = await dependencies.stripe.retrieveCustomer(subscription.customerId);
+  if (customer.deleted || customer.livemode) {
+    throw new WebhookConflictError("Customer Stripe incompatível.");
+  }
+  const tenant = await resolveTenant(subscription, customer, dependencies);
+  return { ...tenant, snapshot: buildSnapshot(subscription, config.priceId) };
+};
+
 export const syncStripeWebhookEvent = async (
   event: StripeWebhookEvent,
   dependencies: WebhookDependencies,
@@ -260,20 +286,24 @@ export const syncStripeWebhookEvent = async (
     throw new WebhookConflictError("Subscription associada ausente.");
   }
 
-  const subscription = await dependencies.stripe.retrieveSubscription(subscriptionId);
-  if (subscription.id !== subscriptionId) {
-    throw new WebhookConflictError("Subscription recuperada divergente.");
-  }
-  const customer = await dependencies.stripe.retrieveCustomer(subscription.customerId);
-  if (customer.deleted || customer.livemode) {
-    throw new WebhookConflictError("Customer Stripe incompatível.");
-  }
-  const tenant = await resolveTenant(subscription, customer, dependencies);
-  const snapshot = buildSnapshot(subscription, config.priceId);
-  const input = { ...tenant, event: { id: event.id, created: event.created }, snapshot };
+  const canonical = await loadCanonicalState(subscriptionId, dependencies, config);
+  const input = {
+    ...canonical,
+    event: { id: event.id, created: event.created },
+  };
   let projection = await dependencies.billing.apply(input);
   if (projection.decision === "REQUIRES_STRIPE_SYNC") {
-    projection = await dependencies.billing.reconcile(input);
+    const freshCanonical = await loadCanonicalState(subscriptionId, dependencies, config);
+    if (
+      freshCanonical.ownerId !== canonical.ownerId ||
+      freshCanonical.pageSlug !== canonical.pageSlug
+    ) {
+      throw new WebhookConflictError("Tenant alterado durante reconciliação canônica.");
+    }
+    projection = await dependencies.billing.reconcile({
+      ...freshCanonical,
+      event: input.event,
+    });
   }
   return { handled: true, result: projection.decision };
 };

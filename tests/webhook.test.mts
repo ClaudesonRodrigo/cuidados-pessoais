@@ -69,18 +69,29 @@ const request = (signature = "valid") => new Request("https://beautypro.test/api
 const setup = () => {
   let event = stripeEvent();
   let canonicalSubscription = subscription();
+  let subscriptionResponses: CanonicalSubscription[] = [];
   let canonicalCustomer = customer();
-  let bindings: WebhookBinding[] = [];
-  let checkoutState: WebhookBinding | null = null;
+  let bindings: WebhookBinding[] = [{
+    ownerId: OWNER_ID,
+    pageSlug: PAGE_SLUG,
+    stripeCustomerId: CUSTOMER_ID,
+  }];
+  let checkoutState: WebhookBinding | null = {
+    ownerId: OWNER_ID,
+    pageSlug: PAGE_SLUG,
+    stripeCustomerId: CUSTOMER_ID,
+  };
   let billingRecord: BillingRecord | null = null;
   let userRecord: Record<string, unknown> | null = { pageSlug: PAGE_SLUG };
   let pageRecord: Record<string, unknown> | null = { userId: OWNER_ID };
   let applyDecision: BillingProjectionDecision = "APPLIED";
   let secretMissing = false;
   let retrieveFailure = false;
+  let retrieveFailureAt: number | undefined;
   let billingFailure = false;
   const calls = { construct: 0, subscription: 0, customer: 0, apply: 0, reconcile: 0 };
   const snapshots: Array<Record<string, unknown>> = [];
+  const reconciledSnapshots: Array<Record<string, unknown>> = [];
   const logs: Array<Record<string, unknown>> = [];
 
   const dependencies: WebhookDependencies = {
@@ -94,8 +105,11 @@ const setup = () => {
     stripe: {
       async retrieveSubscription() {
         calls.subscription += 1;
-        if (retrieveFailure) throw new Error("stripe unavailable");
-        return structuredClone(canonicalSubscription);
+        if (retrieveFailure || calls.subscription === retrieveFailureAt) {
+          throw new Error("stripe unavailable");
+        }
+        const value = subscriptionResponses.shift() ?? canonicalSubscription;
+        return structuredClone(value);
       },
       async retrieveCustomer() {
         calls.customer += 1;
@@ -119,6 +133,7 @@ const setup = () => {
       async reconcile(input) {
         calls.reconcile += 1;
         snapshots.push(structuredClone(input.snapshot));
+        reconciledSnapshots.push(structuredClone(input.snapshot));
         return { decision: "RECONCILED", billing: billingRecord };
       },
     },
@@ -133,9 +148,13 @@ const setup = () => {
     dependencies,
     calls,
     snapshots,
+    reconciledSnapshots,
     logs,
     setEvent(value: StripeWebhookEvent) { event = value; },
     setSubscription(value: CanonicalSubscription) { canonicalSubscription = value; },
+    setSubscriptionResponses(value: CanonicalSubscription[]) {
+      subscriptionResponses = structuredClone(value);
+    },
     setCustomer(value: CanonicalCustomer) { canonicalCustomer = value; },
     setBindings(value: WebhookBinding[]) { bindings = value; },
     setCheckoutState(value: WebhookBinding | null) { checkoutState = value; },
@@ -145,6 +164,7 @@ const setup = () => {
     setDecision(value: BillingProjectionDecision) { applyDecision = value; },
     setSecretMissing(value: boolean) { secretMissing = value; },
     setRetrieveFailure(value: boolean) { retrieveFailure = value; },
+    setRetrieveFailureAt(value: number | undefined) { retrieveFailureAt = value; },
     setBillingFailure(value: boolean) { billingFailure = value; },
   };
 };
@@ -260,8 +280,48 @@ test("mesmo created com IDs diferentes executa canonical reconciliation explíci
   context.setDecision("REQUIRES_STRIPE_SYNC");
   const response = await handleStripeWebhookRequest(request(), context.dependencies);
   assert.equal(response.status, 200);
+  assert.equal(context.calls.subscription, 2);
+  assert.equal(context.calls.customer, 2);
   assert.equal(context.calls.reconcile, 1);
   assert.equal(context.logs.at(-1)?.result, "RECONCILED");
+});
+
+test("reconciliação descarta active antigo e persiste canceled do fresh retrieve", async () => {
+  const context = setup();
+  context.setDecision("REQUIRES_STRIPE_SYNC");
+  context.setSubscriptionResponses([
+    subscription({ status: "active" }),
+    subscription({ status: "canceled" }),
+  ]);
+  const response = await handleStripeWebhookRequest(request(), context.dependencies);
+  assert.equal(response.status, 200);
+  assert.equal(context.snapshots[0]?.status, "active");
+  assert.equal(context.reconciledSnapshots[0]?.status, "canceled");
+});
+
+test("fresh active vence past_due antigo sem criar pastDueSince na reconciliação", async () => {
+  const context = setup();
+  context.setDecision("REQUIRES_STRIPE_SYNC");
+  context.setSubscriptionResponses([
+    subscription({ status: "past_due" }),
+    subscription({ status: "active" }),
+  ]);
+  const response = await handleStripeWebhookRequest(request(), context.dependencies);
+  assert.equal(response.status, 200);
+  assert.equal(context.snapshots[0]?.status, "past_due");
+  assert.equal(context.reconciledSnapshots[0]?.status, "active");
+  assert.equal("pastDueSince" in context.reconciledSnapshots[0]!, false);
+});
+
+test("falha no fresh retrieve responde 503 sem reconciliar snapshot antigo", async () => {
+  const context = setup();
+  context.setDecision("REQUIRES_STRIPE_SYNC");
+  context.setRetrieveFailureAt(2);
+  const response = await handleStripeWebhookRequest(request(), context.dependencies);
+  assert.equal(response.status, 503);
+  assert.equal(context.calls.apply, 1);
+  assert.equal(context.calls.reconcile, 0);
+  assert.equal(context.reconciledSnapshots.length, 0);
 });
 
 for (const status of [
@@ -287,6 +347,38 @@ test("metadata Subscription/Customer conflitante falha fechada", async () => {
   const context = setup();
   context.setCustomer(customer({ metadata: { ...metadata(), beautyProOwnerId: "owner-b" } }));
   assert.equal((await handleStripeWebhookRequest(request(), context.dependencies)).status, 500);
+});
+
+test("metadata correta sem billing ou billingCheckoutState não cria binding sozinha", async () => {
+  const context = setup();
+  context.setBindings([]);
+  context.setCheckoutState(null);
+  context.setBilling(null);
+  assert.equal((await handleStripeWebhookRequest(request(), context.dependencies)).status, 500);
+  assert.equal(context.calls.apply, 0);
+});
+
+test("billingCheckoutState confiável permite bootstrap com metadata e tenant concordantes", async () => {
+  const context = setup();
+  const response = await handleStripeWebhookRequest(request(), context.dependencies);
+  assert.equal(response.status, 200);
+  assert.equal(context.calls.apply, 1);
+});
+
+test("billing válido permite sync sem billingCheckoutState", async () => {
+  const context = setup();
+  context.setCheckoutState(null);
+  context.setBilling({
+    ownerId: OWNER_ID,
+    pageSlug: PAGE_SLUG,
+    stripeCustomerId: CUSTOMER_ID,
+    stripeSubscriptionId: SUBSCRIPTION_ID,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  const response = await handleStripeWebhookRequest(request(), context.dependencies);
+  assert.equal(response.status, 200);
+  assert.equal(context.calls.apply, 1);
 });
 
 test("owner vindo de binding conflitante não é escolhido arbitrariamente", async () => {
@@ -318,6 +410,15 @@ test("billing Customer conflitante falha fechada", async () => {
     updatedAt: new Date(),
   });
   assert.equal((await handleStripeWebhookRequest(request(), context.dependencies)).status, 500);
+});
+
+test("metadata divergente do binding confiável falha fechada", async () => {
+  const context = setup();
+  const divergentMetadata = { ...metadata(), beautyProPageSlug: "salao-b" };
+  context.setSubscription(subscription({ metadata: divergentMetadata }));
+  context.setCustomer(customer({ metadata: divergentMetadata }));
+  assert.equal((await handleStripeWebhookRequest(request(), context.dependencies)).status, 500);
+  assert.equal(context.calls.apply, 0);
 });
 
 test("Checkout completed recupera e sincroniza Subscription canônica", async () => {
