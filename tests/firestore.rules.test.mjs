@@ -267,14 +267,30 @@ test("page list público é negado", async () => {
   await assertFails(getDocs(collection(db("public"), "pages")));
 });
 
-test("owner atualiza campos operacionais da própria page", async () => {
-  await assertSucceeds(updateDoc(doc(db("ownerA"), "pages/salao-a"), {
-    title: "Novo título", bio: "Nova bio", address: "Rua A", whatsapp: "5500",
-    pixKey: "pix", profileImageUrl: "profile", backgroundImage: "background",
-    coupons: [], theme: "light", isOpen: false,
-    schedule: { open: "09:00", close: "18:00", workingDays: [1, 2, 3] },
-  }));
-});
+for (const [field, value] of [
+  ["title", "Novo título"],
+  ["bio", "Nova bio"],
+  ["address", "Rua A"],
+  ["whatsapp", "5579999999999"],
+  ["pixKey", "pix"],
+  ["profileImageUrl", "https://example.com/profile.jpg"],
+  ["isOpen", false],
+  ["schedule", { open: "09:00", close: "18:00", workingDays: [1, 2, 3] }],
+]) {
+  test(`owner não altera campo de Perfil migrado diretamente: ${field}`, async () => {
+    await assertFails(updateDoc(doc(db("ownerA"), "pages/salao-a"), { [field]: value }));
+  });
+}
+
+for (const [field, value] of [
+  ["theme", "light"],
+  ["backgroundImage", "https://example.com/background.jpg"],
+  ["coupons", []],
+]) {
+  test(`owner preserva writer temporário de Configuração: ${field}`, async () => {
+    await assertSucceeds(updateDoc(doc(db("ownerA"), "pages/salao-a"), { [field]: value }));
+  });
+}
 
 for (const [profile, pageSlug] of [
   ["ownerA", "salao-a"],
@@ -294,12 +310,6 @@ test("owner não usa arrayUnion ou arrayRemove em links", async () => {
   await assertFails(updateDoc(reference, { links: arrayRemove(link) }));
 });
 
-test("owner continua atualizando campo de Perfil não migrado", async () => {
-  await assertSucceeds(updateDoc(doc(db("ownerA"), "pages/salao-a"), {
-    title: "Perfil preservado",
-    bio: "Fluxo legado preservado",
-  }));
-});
 
 test("superadmin preserva update direto de links", async () => {
   await assertSucceeds(updateDoc(doc(db("officialSuperAdmin"), "pages/salao-a"), {

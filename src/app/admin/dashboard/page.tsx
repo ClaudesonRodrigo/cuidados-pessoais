@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { signOutUser } from '@/lib/authService';
 import {
   getPageDataForUser,
-  updatePageTheme, updatePageBackground, updateProfileImage, updatePageProfileInfo, updatePageCoupons,
+  updatePageTheme, updatePageBackground, updatePageCoupons,
   getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateAppointmentStatus, updateUserPlan,
   addLoyaltyPoint, getTransactionsByDate, addTransaction, deleteTransaction,
   PageData, LinkData, CouponData, AppointmentData, TransactionData
@@ -31,6 +31,7 @@ import {
   reorderAdminServices,
   updateAdminService,
 } from '@/lib/adminServicesClient';
+import { updateAdminProfile } from '@/lib/adminProfileClient';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
@@ -300,11 +301,36 @@ export default function DashboardPage() {
   };
 
   const handleSaveProfile = async () => {
-      if(!pageSlug) return;
+      if (!pageData) return;
+      if (isCommerciallyBlocked) {
+        setIsUpgradeModalOpen(true);
+        return showToast("Assinatura necessária para alterar o perfil.", 'error');
+      }
       const whatsappToSave = editingProfileWhatsapp ? `55${editingProfileWhatsapp.replace(/\D/g, '')}` : '';
-      const schedule = { open: schedOpen, close: schedClose, lunchStart: schedLunchStart, lunchEnd: schedLunchEnd, workingDays: schedDays };
-      await updatePageProfileInfo(pageSlug, editingProfileTitle, editingProfileBio, editingProfileAddress, isOpenStore, whatsappToSave, editingProfilePix, schedule);
-      showToast("Perfil salvo!"); fetchPageData();
+      const schedule = {
+        open: schedOpen,
+        close: schedClose,
+        workingDays: schedDays,
+        ...(schedLunchStart && schedLunchEnd
+          ? { lunchStart: schedLunchStart, lunchEnd: schedLunchEnd }
+          : {}),
+      };
+      try {
+        await updateAdminProfile({
+          title: editingProfileTitle,
+          bio: editingProfileBio,
+          address: editingProfileAddress,
+          isOpen: isOpenStore,
+          whatsapp: whatsappToSave,
+          pixKey: editingProfilePix,
+          schedule,
+        });
+        showToast("Perfil salvo!");
+        await fetchPageData();
+      } catch (error) {
+        console.error(error);
+        showToast("Não foi possível salvar o perfil.", 'error');
+      }
   };
 
   const handleStatusChange = async (id: string, newStatus: any, isFinancialTab = false, customerId?: string) => {
@@ -329,10 +355,25 @@ export default function DashboardPage() {
   };
 
   const handleProfileUpload = async (e: any) => {
+    if (isCommerciallyBlocked) {
+      setIsUpgradeModalOpen(true);
+      return showToast("Assinatura necessária para alterar o perfil.", 'error');
+    }
+    const file = e.target.files?.[0];
+    if (!file) return;
     setIsUploadingProfile(true);
-    const url = await uploadToCloudinary(e.target.files[0]);
-    if(url && pageSlug) { await updateProfileImage(pageSlug, url); fetchPageData(); }
-    setIsUploadingProfile(false);
+    try {
+      const url = await uploadToCloudinary(file);
+      if (url) {
+        await updateAdminProfile({ profileImageUrl: url });
+        await fetchPageData();
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("Não foi possível atualizar a imagem.", 'error');
+    } finally {
+      setIsUploadingProfile(false);
+    }
   };
 
   const handleItemImageUpload = async (e: any) => {

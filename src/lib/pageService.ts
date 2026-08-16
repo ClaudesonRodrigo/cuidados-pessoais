@@ -285,20 +285,6 @@ export const updatePageBackground = async (pageSlug: string, imageUrl: string): 
   await updateDoc(doc(db, "pages", pageSlug), { backgroundImage: imageUrl });
 };
 
-export const updateProfileImage = async (pageSlug: string, imageUrl: string): Promise<void> => {
-  await updateDoc(doc(db, "pages", pageSlug), { profileImageUrl: imageUrl });
-};
-
-export const updatePageProfileInfo = async (
-    pageSlug: string, title: string, bio: string, address: string, 
-    isOpen: boolean, whatsapp: string, pixKey: string,
-    schedule?: ScheduleData
-): Promise<void> => {
-  const dataToUpdate: any = { title, bio, address, isOpen, whatsapp, pixKey: pixKey || "" };
-  if (schedule) dataToUpdate.schedule = schedule;
-  
-  await updateDoc(doc(db, "pages", pageSlug), dataToUpdate);
-};
 
 export const findUserByEmail = async (email: string): Promise<(UserData & { uid: string }) | null> => {
   if (!email) return null;

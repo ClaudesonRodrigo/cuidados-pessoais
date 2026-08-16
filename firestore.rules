@@ -143,9 +143,7 @@ service cloud.firestore {
                        (isAuthenticated() &&
                         resource.data.userId == request.auth.uid &&
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                          'title', 'bio', 'address', 'whatsapp', 'pixKey',
-                          'profileImageUrl', 'backgroundImage', 'coupons',
-                          'theme', 'isOpen', 'schedule'
+                          'backgroundImage', 'coupons', 'theme'
                         ]));
       allow delete: if isSuperAdmin();
     }
