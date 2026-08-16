@@ -49,6 +49,61 @@ export type CustomerPortalCustomer = {
   metadata: Record<string, string>;
 };
 
+export type CustomerPortalBindingDependencies = {
+  billing: BillingRecord | null;
+  checkoutState: BillingCheckoutState | null;
+  retrieveCustomer(customerId: string): Promise<CustomerPortalCustomer | null>;
+};
+
+export const resolveValidatedPortalCustomer = async (
+  ownerId: string,
+  pageSlug: string,
+  dependencies: CustomerPortalBindingDependencies,
+): Promise<CustomerPortalCustomer> => {
+  const { billing, checkoutState: state } = dependencies;
+  if (billing && (billing.ownerId !== ownerId || billing.pageSlug !== pageSlug)) {
+    throw new CustomerPortalError(409, "TENANT_INCONSISTENT", "Billing pertence a outro tenant.");
+  }
+  if (state && (state.ownerId !== ownerId || state.pageSlug !== pageSlug)) {
+    throw new CustomerPortalError(
+      409,
+      "CUSTOMER_BINDING_CONFLICT",
+      "Binding operacional inconsistente.",
+    );
+  }
+
+  const billingCustomer = billing?.stripeCustomerId;
+  const checkoutCustomer = state?.stripeCustomerId;
+  if (billingCustomer && checkoutCustomer && billingCustomer !== checkoutCustomer) {
+    throw new CustomerPortalError(
+      409,
+      "CUSTOMER_BINDING_CONFLICT",
+      "Customers canônicos divergentes.",
+    );
+  }
+  const canonicalCustomerId = billingCustomer || checkoutCustomer;
+  if (!canonicalCustomerId) {
+    throw new CustomerPortalError(409, "PORTAL_NOT_AVAILABLE", "Portal ainda não disponível.");
+  }
+
+  const customer = await dependencies.retrieveCustomer(canonicalCustomerId);
+  if (
+    !customer ||
+    customer.id !== canonicalCustomerId ||
+    customer.deleted ||
+    customer.livemode ||
+    customer.metadata.beautyProOwnerId !== ownerId ||
+    customer.metadata.beautyProPageSlug !== pageSlug
+  ) {
+    throw new CustomerPortalError(
+      409,
+      "CUSTOMER_BINDING_CONFLICT",
+      "Customer Stripe inconsistente.",
+    );
+  }
+  return customer;
+};
+
 export type CustomerPortalDependencies = {
   verifyIdToken(token: string): Promise<CheckoutIdentity>;
   accounts: {
@@ -175,49 +230,14 @@ export const createCustomerPortalSession = async (
     dependencies.billing.getBillingByOwnerId(ownerId),
     dependencies.checkoutState.get(ownerId),
   ]);
-  if (billing && (billing.ownerId !== ownerId || billing.pageSlug !== pageSlug)) {
-    throw new CustomerPortalError(409, "TENANT_INCONSISTENT", "Billing pertence a outro tenant.");
-  }
-  if (state && (state.ownerId !== ownerId || state.pageSlug !== pageSlug)) {
-    throw new CustomerPortalError(
-      409,
-      "CUSTOMER_BINDING_CONFLICT",
-      "Binding operacional inconsistente.",
-    );
-  }
-
-  const billingCustomer = billing?.stripeCustomerId;
-  const checkoutCustomer = state?.stripeCustomerId;
-  if (billingCustomer && checkoutCustomer && billingCustomer !== checkoutCustomer) {
-    throw new CustomerPortalError(
-      409,
-      "CUSTOMER_BINDING_CONFLICT",
-      "Customers canônicos divergentes.",
-    );
-  }
-  const canonicalCustomerId = billingCustomer || checkoutCustomer;
-  if (!canonicalCustomerId) {
-    throw new CustomerPortalError(409, "PORTAL_NOT_AVAILABLE", "Portal ainda não disponível.");
-  }
-
-  const customer = await dependencies.stripe.retrieveCustomer(canonicalCustomerId);
-  if (
-    !customer ||
-    customer.id !== canonicalCustomerId ||
-    customer.deleted ||
-    customer.livemode ||
-    customer.metadata.beautyProOwnerId !== ownerId ||
-    customer.metadata.beautyProPageSlug !== pageSlug
-  ) {
-    throw new CustomerPortalError(
-      409,
-      "CUSTOMER_BINDING_CONFLICT",
-      "Customer Stripe inconsistente.",
-    );
-  }
+  const customer = await resolveValidatedPortalCustomer(ownerId, pageSlug, {
+    billing,
+    checkoutState: state,
+    retrieveCustomer: dependencies.stripe.retrieveCustomer,
+  });
 
   const session = await dependencies.stripe.createPortalSession({
-    customer: canonicalCustomerId,
+    customer: customer.id,
     returnUrl: `${config.appUrl}/admin/dashboard`,
   });
   if (!validPortalUrl(session.url)) {

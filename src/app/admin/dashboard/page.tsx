@@ -20,17 +20,20 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableLinkItem } from '@/components/SortableLinkItem';
 import { UpgradeModal } from '@/components/UpgradeModal';
+import { SubscriptionCard } from '@/components/SubscriptionCard';
 import { ActionModal } from '@/components/ActionModal';
 import { TransactionModal } from '@/components/TransactionModal';
 import { isOfficialSuperAdminUid } from '@/lib/adminIdentity';
+import { useBillingStatus } from '@/lib/billingStatusClient';
 import { updateServiceAtIndex } from '@/lib/serviceLinks';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
 
 export default function DashboardPage() {
-  const { user, userData, loading } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
+  const billingStatus = useBillingStatus(user);
   
   const [activeTab, setActiveTab] = useState('agenda');
   const [pageData, setPageData] = useState<PageData | null>(null);
@@ -84,7 +87,12 @@ export default function DashboardPage() {
   const [schedDays, setSchedDays] = useState<number[]>([1, 2, 3, 4, 5, 6]); 
   const [isUploadingProfile, setIsUploadingProfile] = useState(false);
   
-  const isProPlan = (pageData?.plan === 'pro' || (pageData as any)?.isPro === true);
+  const hasCommercialAccess = billingStatus.data !== null && [
+    'ADMIN_BYPASS',
+    'ACTIVE',
+    'PAST_DUE_GRACE',
+    'TRIAL_ACTIVE',
+  ].includes(billingStatus.data.state);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -217,7 +225,7 @@ export default function DashboardPage() {
     if (!Number.isInteger(durationMinutes) || durationMinutes <= 0 || durationMinutes > 24 * 60) {
       return showToast("Duração inválida.", 'error');
     }
-    if (editingIndex === null && !isProPlan && current.length >= 8) {
+    if (editingIndex === null && !hasCommercialAccess && current.length >= 8) {
       return showToast("Limite plano FREE atingido.", 'error');
     }
 
@@ -371,18 +379,14 @@ export default function DashboardPage() {
          </div>
       </nav>
 
-      {/* --- AVISO DE TRIAL DE 7 DIAS --- */}
-      {userData?.plan === 'pro' && userData?.trialDeadline && (
-        <div className="bg-linear-to-r from-amber-400 to-orange-500 text-white p-2.5 text-center text-xs font-black uppercase tracking-widest flex justify-center items-center gap-3 shadow-md z-10 relative">
-          <FaClock className="animate-pulse" /> 
-          Seu acesso PRO (Teste Grátis) expira em breve!
-          <button onClick={() => setIsUpgradeModalOpen(true)} className="ml-2 bg-gray-900 text-white px-4 py-1.5 rounded-full hover:bg-black transition shadow-xl active:scale-95">
-            Garantir Acesso
-          </button>
-        </div>
-      )}
-
       <main className="max-w-4xl mx-auto py-8 px-4 space-y-8">
+
+        <SubscriptionCard
+          data={billingStatus.data}
+          loading={billingStatus.loading}
+          error={billingStatus.error}
+          onSubscribe={() => setIsUpgradeModalOpen(true)}
+        />
 
         {isSuperAdmin && !pageSlug && (
           <div className="bg-amber-50 border border-amber-200 text-amber-900 p-5 rounded-2xl text-sm font-bold">
@@ -508,7 +512,7 @@ export default function DashboardPage() {
 
         {activeTab === 'services' && (
              <div className="animate-beauty space-y-8">
-                 {!isProPlan && ( <div onClick={() => setIsUpgradeModalOpen(true)} className="bg-gray-900 text-white p-8 rounded-[2.5rem] shadow-2xl border border-white/5 relative overflow-hidden group"> <div className="absolute top-0 right-0 p-10 opacity-5 group-hover:scale-110 duration-700"><FaCrown size={150}/></div> <div className="relative z-10"> <h3 className="font-black text-purple-400 uppercase tracking-widest text-xs flex items-center gap-2 mb-2"><FaCrown/> Plano Beauty Free</h3> <p className="text-sm text-gray-400 font-medium">Libere serviços ilimitados e fotos profissionais no seu cardápio.</p> </div> <button className="bg-purple-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl relative z-10">Ver Planos</button> </div> )}
+                 {!hasCommercialAccess && ( <div onClick={() => setIsUpgradeModalOpen(true)} className="bg-gray-900 text-white p-8 rounded-[2.5rem] shadow-2xl border border-white/5 relative overflow-hidden group"> <div className="absolute top-0 right-0 p-10 opacity-5 group-hover:scale-110 duration-700"><FaCrown size={150}/></div> <div className="relative z-10"> <h3 className="font-black text-purple-400 uppercase tracking-widest text-xs flex items-center gap-2 mb-2"><FaCrown/> Plano Beauty Free</h3> <p className="text-sm text-gray-400 font-medium">Libere serviços ilimitados e fotos profissionais no seu cardápio.</p> </div> <button className="bg-purple-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl relative z-10">Ver Planos</button> </div> )}
                  <div id="service-form" className="bg-white p-8 rounded-[2.5rem] border border-purple-50 shadow-xl shadow-purple-50">
                    <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-8 flex gap-2 items-center">
                      {editingIndex === null ? <FaPlus className="text-green-500"/> : <FaSave className="text-blue-500"/>}
@@ -583,8 +587,8 @@ export default function DashboardPage() {
                         <div className="space-y-1.5"><label className="text-[10px] font-black text-purple-300 uppercase tracking-widest ml-1">Biografia</label><textarea value={editingProfileBio} onChange={e=>setEditingProfileBio(e.target.value)} className="w-full text-sm bg-gray-50 border border-purple-50 rounded-2xl p-4 outline-none focus:border-purple-400 shadow-inner" rows={3} placeholder="Destaque seus rituais..."/></div>
                         
                         <div className="pt-4 border-t border-purple-50">
-                            <div className="flex items-center justify-between mb-4"><label className="text-[10px] font-black text-purple-400 uppercase tracking-widest flex items-center gap-2"><FaQrcode/> Chave PIX (Para Checkout)</label>{!isProPlan && <span className="text-[9px] font-black bg-purple-100 text-purple-600 px-3 py-1 rounded-full uppercase">Plano PRO</span>}</div>
-                            <div className={`relative ${!isProPlan ? 'opacity-40 grayscale pointer-events-none' : ''}`}><div className="flex items-center bg-gray-950 border border-purple-500/20 rounded-2xl px-4 py-4 shadow-2xl"><FaKey className="text-purple-500 mr-3"/><input value={editingProfilePix} onChange={e=>setEditingProfilePix(e.target.value)} className="bg-transparent outline-none w-full text-white font-bold text-sm" placeholder="Chave Pix (CPF, Celular ou Email)"/></div></div>
+                            <div className="flex items-center justify-between mb-4"><label className="text-[10px] font-black text-purple-400 uppercase tracking-widest flex items-center gap-2"><FaQrcode/> Chave PIX (Para Checkout)</label>{!hasCommercialAccess && <span className="text-[9px] font-black bg-purple-100 text-purple-600 px-3 py-1 rounded-full uppercase">Plano PRO</span>}</div>
+                            <div className={`relative ${!hasCommercialAccess ? 'opacity-40 grayscale pointer-events-none' : ''}`}><div className="flex items-center bg-gray-950 border border-purple-500/20 rounded-2xl px-4 py-4 shadow-2xl"><FaKey className="text-purple-500 mr-3"/><input value={editingProfilePix} onChange={e=>setEditingProfilePix(e.target.value)} className="bg-transparent outline-none w-full text-white font-bold text-sm" placeholder="Chave Pix (CPF, Celular ou Email)"/></div></div>
                         </div>
 
                         <button onClick={handleSaveProfile} className="w-full bg-linear-to-r from-purple-600 to-pink-500 text-white px-8 py-5 rounded-[1.8rem] font-black uppercase tracking-widest text-[11px] shadow-2xl shadow-purple-900/30 hover:scale-[1.01] transition transform active:scale-95 flex items-center justify-center gap-3"><FaSave size={14}/> Salvar Configurações</button>
