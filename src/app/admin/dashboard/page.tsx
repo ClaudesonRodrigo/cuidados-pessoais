@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { signOutUser } from '@/lib/authService';
 import {
-  getPageDataForUser, addLinkToPage, deleteLinkFromPage, updateLinksOnPage,
+  getPageDataForUser,
   updatePageTheme, updatePageBackground, updateProfileImage, updatePageProfileInfo, updatePageCoupons,
   getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateAppointmentStatus, updateUserPlan,
   addLoyaltyPoint, getTransactionsByDate, addTransaction, deleteTransaction,
@@ -25,7 +25,12 @@ import { ActionModal } from '@/components/ActionModal';
 import { TransactionModal } from '@/components/TransactionModal';
 import { isOfficialSuperAdminUid } from '@/lib/adminIdentity';
 import { useBillingStatus } from '@/lib/billingStatusClient';
-import { updateServiceAtIndex } from '@/lib/serviceLinks';
+import {
+  createAdminService,
+  deleteAdminService,
+  reorderAdminServices,
+  updateAdminService,
+} from '@/lib/adminServicesClient';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
@@ -93,6 +98,7 @@ export default function DashboardPage() {
     'PAST_DUE_GRACE',
     'TRIAL_ACTIVE',
   ].includes(billingStatus.data.state);
+  const isCommerciallyBlocked = billingStatus.data?.state === 'BLOCKED';
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -219,16 +225,15 @@ export default function DashboardPage() {
 
   const handleSubmitItem = async (e: FormEvent) => {
     e.preventDefault();
-    if (!pageSlug || !newItemTitle) return;
-    const current = pageData?.links || [];
+    if (!pageData || !newItemTitle) return;
+    if (isCommerciallyBlocked) {
+      setIsUpgradeModalOpen(true);
+      return showToast("Assinatura necessária para alterar serviços.", 'error');
+    }
     const durationMinutes = Number.parseInt(newItemDuration, 10);
     if (!Number.isInteger(durationMinutes) || durationMinutes <= 0 || durationMinutes > 24 * 60) {
       return showToast("Duração inválida.", 'error');
     }
-    if (editingIndex === null && !hasCommercialAccess && current.length >= 8) {
-      return showToast("Limite plano FREE atingido.", 'error');
-    }
-
     const editableFields = {
       title: newItemTitle,
       price: newItemPrice,
@@ -240,19 +245,9 @@ export default function DashboardPage() {
 
     try {
       if (editingIndex === null) {
-        const newItem: LinkData = {
-          ...editableFields,
-          url: '',
-          type: 'service',
-          order: current.length + 1,
-          clicks: 0,
-        };
-        await addLinkToPage(pageSlug, newItem);
+        await createAdminService(editableFields);
       } else {
-        await updateLinksOnPage(
-          pageSlug,
-          updateServiceAtIndex(current, editingIndex, editableFields),
-        );
+        await updateAdminService(editingIndex, editableFields);
       }
       const successMessage = editingIndex === null
         ? "Procedimento adicionado!"
@@ -266,14 +261,23 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDeleteItem = async (link: LinkData) => {
+  const handleDeleteItem = async (link: LinkData, index: number) => {
+     if (isCommerciallyBlocked) {
+       setIsUpgradeModalOpen(true);
+       return showToast("Assinatura necessária para alterar serviços.", 'error');
+     }
      setConfirmData({
          isOpen: true, title: "Remover", desc: `Apagar "${link.title}"?`, isDanger: true, confirmText: "Apagar",
          action: async () => {
-           await deleteLinkFromPage(pageSlug!, link);
-           resetServiceForm();
-           await fetchPageData();
-           showToast("Removido.");
+           try {
+             await deleteAdminService(index);
+             resetServiceForm();
+             await fetchPageData();
+             showToast("Removido.");
+           } catch (error) {
+             console.error(error);
+             showToast("Não foi possível remover o procedimento.", 'error');
+           }
          }
      })
   };
@@ -341,19 +345,23 @@ export default function DashboardPage() {
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id && pageData?.links) {
-      setPageData((prev) => {
-        if (!prev) return null;
-        const currentIds = prev.links.map((l, i) => `item-${(l.title || 'item').replace(/[^a-zA-Z0-9]/g, '')}-${i}`);
-        const oldIndex = currentIds.indexOf(String(active.id));
-        const newIndex = currentIds.indexOf(String(over.id));
-        if (oldIndex !== -1 && newIndex !== -1) {
-            const newLinks = arrayMove(prev.links, oldIndex, newIndex);
-            const reordered = newLinks.map((l, i) => ({ ...l, order: i + 1 }));
-            if (pageSlug) updateLinksOnPage(pageSlug, reordered);
-            return { ...prev, links: reordered };
+      if (isCommerciallyBlocked) {
+        setIsUpgradeModalOpen(true);
+        return showToast("Assinatura necessária para alterar serviços.", 'error');
+      }
+      const currentIds = pageData.links.map((l, i) => `item-${(l.title || 'item').replace(/[^a-zA-Z0-9]/g, '')}-${i}`);
+      const oldIndex = currentIds.indexOf(String(active.id));
+      const newIndex = currentIds.indexOf(String(over.id));
+      if (oldIndex !== -1 && newIndex !== -1) {
+        try {
+          const indices = arrayMove(pageData.links.map((_, index) => index), oldIndex, newIndex);
+          await reorderAdminServices(indices);
+          await fetchPageData();
+        } catch (error) {
+          console.error(error);
+          showToast("Não foi possível reordenar os procedimentos.", 'error');
         }
-        return prev;
-      });
+      }
     }
   };
 
@@ -561,7 +569,7 @@ export default function DashboardPage() {
                            link={link}
                            index={index}
                            onEdit={() => handleEditItem(link, index)}
-                           onDelete={() => handleDeleteItem(link)}
+                           onDelete={() => handleDeleteItem(link, index)}
                            editingIndex={editingIndex}
                          />
                        ))}

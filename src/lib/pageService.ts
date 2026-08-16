@@ -1,7 +1,7 @@
 // src/lib/pageService.ts
 
 import {
-  doc, getDoc, updateDoc, arrayUnion, arrayRemove, DocumentData,
+  doc, getDoc, updateDoc, DocumentData,
   collection, query, where, getDocs, orderBy, limit, Timestamp, addDoc, deleteDoc, setDoc
 } from "firebase/firestore";
 import { db } from "./firebaseClient";
@@ -272,23 +272,6 @@ export const updateAppointmentStatus = async (appointmentId: string, status: 'co
     }
 };
 
-// --- ESCRITA ---
-
-export const addLinkToPage = async (pageSlug: string, newLink: LinkData): Promise<void> => {
-  const pageDocRef = doc(db, "pages", pageSlug);
-  await updateDoc(pageDocRef, { links: arrayUnion(newLink) });
-};
-
-export const deleteLinkFromPage = async (pageSlug: string, linkToDelete: LinkData): Promise<void> => {
-  const pageDocRef = doc(db, "pages", pageSlug);
-  await updateDoc(pageDocRef, { links: arrayRemove(linkToDelete) });
-};
-
-export const updateLinksOnPage = async (pageSlug: string, updatedLinks: LinkData[]): Promise<void> => {
-  const pageDocRef = doc(db, "pages", pageSlug);
-  await updateDoc(pageDocRef, { links: updatedLinks });
-};
-
 export const updatePageCoupons = async (pageSlug: string, coupons: CouponData[]): Promise<void> => {
   const pageDocRef = doc(db, "pages", pageSlug);
   await updateDoc(pageDocRef, { coupons });
@@ -315,23 +298,6 @@ export const updatePageProfileInfo = async (
   if (schedule) dataToUpdate.schedule = schedule;
   
   await updateDoc(doc(db, "pages", pageSlug), dataToUpdate);
-};
-
-export const incrementLinkClick = async (pageSlug: string, itemId: string): Promise<void> => {
-  try {
-    const pageDocRef = doc(db, "pages", pageSlug);
-    const pageSnap = await getDoc(pageDocRef);
-    if (pageSnap.exists()) {
-      const pageData = pageSnap.data() as PageData;
-      const links = pageData.links || [];
-      const linkIndex = links.findIndex(l => l.title === itemId || l.url === itemId);
-      if (linkIndex !== -1) {
-        const updatedLinks = [...links];
-        updatedLinks[linkIndex] = { ...updatedLinks[linkIndex], clicks: (updatedLinks[linkIndex].clicks || 0) + 1 };
-        await updateDoc(pageDocRef, { links: updatedLinks });
-      }
-    }
-  } catch (error) { console.error(error); }
 };
 
 export const findUserByEmail = async (email: string): Promise<(UserData & { uid: string }) | null> => {

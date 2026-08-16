@@ -10,6 +10,8 @@ import {
 import {
   Timestamp,
   addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -36,6 +38,7 @@ const db = (profile) => {
     customerB: ["customer-b", {}],
     ownerA: ["owner-a", {}],
     ownerB: ["owner-b", {}],
+    ownerBlocked: ["owner-blocked", {}],
     fakeAdminByRole: ["fake-role-admin", { role: "admin" }],
     fakeSuperAdminField: ["fake-super-field", { isSuperAdmin: true }],
     fakeAdminEmail: ["fake-admin-email", { email: "claudesonborges@gmail.com" }],
@@ -98,18 +101,27 @@ const seed = async () => {
       setDoc(doc(admin, "users/owner-b"), {
         uid: "owner-b", role: "owner", plan: "pro", pageSlug: "salao-b", createdAt: CREATED,
       }),
+      setDoc(doc(admin, "users/owner-blocked"), {
+        uid: "owner-blocked", role: "owner", plan: "free", pageSlug: "salao-blocked", createdAt: CREATED,
+      }),
       setDoc(doc(admin, "users/fake-role-admin"), { role: "admin", createdAt: CREATED }),
       setDoc(doc(admin, "users/fake-super-field"), { isSuperAdmin: true, createdAt: CREATED }),
       setDoc(doc(admin, "users/fake-admin-email"), {
         email: "claudesonborges@gmail.com", createdAt: CREATED,
       }),
       setDoc(doc(admin, "pages/salao-a"), {
-        userId: "owner-a", slug: "salao-a", title: "Salão A", bio: "A", links: [],
+        userId: "owner-a", slug: "salao-a", title: "Salão A", bio: "A",
+        links: [{ title: "Corte", type: "service", order: 1, durationMinutes: 30 }],
         plan: "pro", trialDeadline: END, createdAt: CREATED, isOpen: true,
       }),
       setDoc(doc(admin, "pages/salao-b"), {
         userId: "owner-b", slug: "salao-b", title: "Salão B", bio: "B", links: [],
         plan: "pro", trialDeadline: END, createdAt: CREATED, isOpen: true,
+      }),
+      setDoc(doc(admin, "pages/salao-blocked"), {
+        userId: "owner-blocked", slug: "salao-blocked", title: "Salão Bloqueado", bio: "B",
+        links: [{ title: "Barba", type: "service", order: 1, durationMinutes: 30 }],
+        plan: "free", createdAt: CREATED, isOpen: true,
       }),
       setDoc(doc(admin, "appointments/a-pending"), appointment()),
       setDoc(doc(admin, "appointments/a-confirmed"), appointment({ status: "confirmed" })),
@@ -134,6 +146,9 @@ const seed = async () => {
       }),
       setDoc(doc(admin, "billingCheckoutState/owner-a"), {
         ownerId: "owner-a", pageSlug: "salao-a", operationState: "READY",
+      }),
+      setDoc(doc(admin, "billing/owner-blocked"), {
+        ownerId: "owner-blocked", pageSlug: "salao-blocked", status: "unpaid",
       }),
     ];
     await Promise.all(writes);
@@ -245,6 +260,7 @@ test("user comum não pode criar ou excluir users", async () => {
 
 test("page get por slug conhecido permanece público", async () => {
   await assertSucceeds(getDoc(doc(db("public"), "pages/salao-a")));
+  await assertSucceeds(getDoc(doc(db("public"), "pages/salao-blocked")));
 });
 
 test("page list público é negado", async () => {
@@ -255,8 +271,39 @@ test("owner atualiza campos operacionais da própria page", async () => {
   await assertSucceeds(updateDoc(doc(db("ownerA"), "pages/salao-a"), {
     title: "Novo título", bio: "Nova bio", address: "Rua A", whatsapp: "5500",
     pixKey: "pix", profileImageUrl: "profile", backgroundImage: "background",
-    links: [], coupons: [], theme: "light", isOpen: false,
+    coupons: [], theme: "light", isOpen: false,
     schedule: { open: "09:00", close: "18:00", workingDays: [1, 2, 3] },
+  }));
+});
+
+for (const [profile, pageSlug] of [
+  ["ownerA", "salao-a"],
+  ["ownerBlocked", "salao-blocked"],
+]) {
+  test(`${profile} não substitui links diretamente`, async () => {
+    await assertFails(updateDoc(doc(db(profile), `pages/${pageSlug}`), {
+      links: [{ title: "Ataque", type: "service", order: 1, durationMinutes: 60 }],
+    }));
+  });
+}
+
+test("owner não usa arrayUnion ou arrayRemove em links", async () => {
+  const reference = doc(db("ownerA"), "pages/salao-a");
+  const link = { title: "Corte", type: "service", order: 1, durationMinutes: 30 };
+  await assertFails(updateDoc(reference, { links: arrayUnion({ ...link, title: "Novo" }) }));
+  await assertFails(updateDoc(reference, { links: arrayRemove(link) }));
+});
+
+test("owner continua atualizando campo de Perfil não migrado", async () => {
+  await assertSucceeds(updateDoc(doc(db("ownerA"), "pages/salao-a"), {
+    title: "Perfil preservado",
+    bio: "Fluxo legado preservado",
+  }));
+});
+
+test("superadmin preserva update direto de links", async () => {
+  await assertSucceeds(updateDoc(doc(db("officialSuperAdmin"), "pages/salao-a"), {
+    links: [{ title: "Admin", type: "service", order: 1, durationMinutes: 30 }],
   }));
 });
 
@@ -297,7 +344,7 @@ test("owner não executa list global de pages", async () => {
 
 test("superadmin executa list global de pages", async () => {
   const snapshot = await assertSucceeds(getDocs(collection(db("officialSuperAdmin"), "pages")));
-  assert.equal(snapshot.size, 2);
+  assert.equal(snapshot.size, 3);
 });
 
 test("owner comum não cria nem exclui page", async () => {
