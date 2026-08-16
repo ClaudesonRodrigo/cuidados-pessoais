@@ -1,10 +1,12 @@
-import { isOfficialSuperAdminUid } from "./adminIdentity.ts";
 import {
-  resolveCommercialEntitlement,
   type CommercialEntitlement,
   type CommercialEntitlementSource,
   type CommercialEntitlementState,
 } from "./commercialEntitlement.ts";
+import {
+  CommercialAccessError,
+  resolveCommercialContextSnapshot,
+} from "./commercialAccessService.ts";
 import type { BillingRecord, StripeBillingStatus } from "./billingTypes.ts";
 import type { BillingCheckoutState, CheckoutIdentity } from "./checkoutTypes.ts";
 import {
@@ -82,44 +84,6 @@ export const verifyBillingStatusIdToken = async (
   }
 };
 
-const dateValue = (value: unknown): Date | null => {
-  if (value instanceof Date && Number.isFinite(value.getTime())) return value;
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "toDate" in value &&
-    typeof value.toDate === "function"
-  ) {
-    const date = value.toDate();
-    return date instanceof Date && Number.isFinite(date.getTime()) ? date : null;
-  }
-  return null;
-};
-
-const noDateValue = (value: unknown): boolean => value === undefined || value === null;
-
-const resolveLegacySources = (
-  ownerId: string,
-  user: AccountDocument,
-  page: AccountDocument,
-) => {
-  const userTrial = dateValue(user.trialDeadline);
-  const pageTrial = dateValue(page.trialDeadline);
-  const plansAgree = user.plan === "pro" && page.plan === "pro";
-  const trialsAgree = Boolean(
-    userTrial && pageTrial && userTrial.getTime() === pageTrial.getTime(),
-  );
-
-  return {
-    legacyGrant: plansAgree && noDateValue(user.trialDeadline) && noDateValue(page.trialDeadline)
-      ? { ownerId, active: true as const, source: "legacy_grant" as const }
-      : null,
-    promotionalTrial: plansAgree && trialsAgree && userTrial
-      ? { ownerId, endsAt: userTrial }
-      : null,
-  };
-};
-
 const checkoutAllowsSubscription = (status?: StripeBillingStatus): boolean =>
   status === undefined || status === "canceled" || status === "incomplete_expired";
 
@@ -150,8 +114,27 @@ export const resolveBillingStatus = async (
   identity: CheckoutIdentity,
   dependencies: BillingStatusDependencies,
 ): Promise<BillingStatusDto> => {
-  const ownerId = identity.uid;
-  if (isOfficialSuperAdminUid(ownerId)) {
+  let snapshot;
+  try {
+    snapshot = await resolveCommercialContextSnapshot(identity, dependencies, {
+      enforceBillingTenant: false,
+    });
+  } catch (error) {
+    if (error instanceof CommercialAccessError) {
+      if (error.code === "ACCOUNT_NOT_READY" || error.code === "TENANT_INCONSISTENT") {
+        throw new BillingStatusError(409, "ACCOUNT_NOT_READY", "Conta ainda não preparada.");
+      }
+      if (error.code === "UNAUTHORIZED") {
+        throw new BillingStatusError(401, "UNAUTHORIZED", "Token inválido.");
+      }
+      throw new BillingStatusError(503, "BILLING_UNAVAILABLE", "Billing indisponível.");
+    }
+    throw error;
+  }
+
+  const { context, billing } = snapshot;
+  const { ownerId, pageSlug, entitlement } = context;
+  if (entitlement.state === "ADMIN_BYPASS") {
     return {
       state: "ADMIN_BYPASS",
       source: "superadmin",
@@ -161,26 +144,8 @@ export const resolveBillingStatus = async (
     };
   }
 
-  const user = await dependencies.accounts.getUser(ownerId);
-  if (
-    !user ||
-    user.role !== "owner" ||
-    typeof user.pageSlug !== "string" ||
-    !/^[a-z0-9-]{3,120}$/.test(user.pageSlug)
-  ) {
-    throw new BillingStatusError(409, "ACCOUNT_NOT_READY", "Conta ainda não preparada.");
-  }
-
-  const pageSlug = user.pageSlug;
-  const page = await dependencies.accounts.getPage(pageSlug);
-  if (!page || page.userId !== ownerId || page.slug !== pageSlug) {
-    throw new BillingStatusError(409, "ACCOUNT_NOT_READY", "Conta ainda não preparada.");
-  }
-
-  const [billing, checkoutState] = await Promise.all([
-    dependencies.billing.getBillingByOwnerId(ownerId),
-    dependencies.checkoutState.get(ownerId),
-  ]);
+  if (!pageSlug) throw new BillingStatusError(503, "BILLING_UNAVAILABLE", "Billing indisponível.");
+  const checkoutState = await dependencies.checkoutState.get(ownerId);
 
   let canOpenPortal = false;
   try {
@@ -195,19 +160,6 @@ export const resolveBillingStatus = async (
     if (error.code !== "PORTAL_NOT_AVAILABLE") return blockedDto();
   }
 
-  const now = dependencies.now();
-  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
-    throw new BillingStatusError(503, "BILLING_UNAVAILABLE", "Billing indisponível.");
-  }
-
-  const { legacyGrant, promotionalTrial } = resolveLegacySources(ownerId, user, page);
-  const entitlement = resolveCommercialEntitlement({
-    identity: { uid: ownerId },
-    billing,
-    legacyGrant,
-    promotionalTrial,
-    now,
-  });
   return entitlementDto(
     entitlement,
     billing?.status,
