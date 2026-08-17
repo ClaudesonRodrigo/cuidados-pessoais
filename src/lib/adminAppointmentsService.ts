@@ -51,7 +51,7 @@ const invalidRequest = (message = "Requisição inválida."): never => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const readJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
+export const readAppointmentJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
   if (request.headers.get("content-type")?.split(";", 1)[0].trim() !== "application/json") {
     return invalidRequest();
   }
@@ -86,7 +86,7 @@ const readJsonBody = async (request: Request): Promise<Record<string, unknown>> 
   }
 };
 
-const appointmentIdValue = (value: unknown): string => {
+export const validateAppointmentId = (value: unknown): string => {
   if (
     typeof value !== "string" ||
     value.length === 0 ||
@@ -97,17 +97,21 @@ const appointmentIdValue = (value: unknown): string => {
   return value;
 };
 
+export const parseAppointmentAction = (value: unknown): AdminAppointmentAction => {
+  if (value !== "confirm" && value !== "cancel" && value !== "complete") {
+    return invalidRequest("Ação inválida.");
+  }
+  return value;
+};
+
 const actionValue = (body: Record<string, unknown>): AdminAppointmentAction => {
   if (Object.keys(body).length !== 1 || !Object.prototype.hasOwnProperty.call(body, "action")) {
     return invalidRequest();
   }
-  if (body.action !== "confirm" && body.action !== "cancel" && body.action !== "complete") {
-    return invalidRequest("Ação inválida.");
-  }
-  return body.action;
+  return parseAppointmentAction(body.action);
 };
 
-const nextStatus = (
+export const resolveNextAppointmentStatus = (
   current: unknown,
   action: AdminAppointmentAction,
 ): AppointmentStatus => {
@@ -133,18 +137,18 @@ export const handleAdminAppointmentStatusRequest = async (
   let appointmentId: string | undefined;
   try {
     if (request.method !== "POST" || new URL(request.url).search.length > 0) return invalidRequest();
-    appointmentId = appointmentIdValue(appointmentIdInput);
+    appointmentId = validateAppointmentId(appointmentIdInput);
     const context = await dependencies.requireCommercialAccess(request);
     ownerId = context.ownerId;
     if (!context.pageSlug) {
       throw new AdminAppointmentsError(409, "TENANT_CONTEXT_REQUIRED", "Contexto de tenant necessário.");
     }
-    const action = actionValue(await readJsonBody(request));
+    const action = actionValue(await readAppointmentJsonBody(request));
     const status = await dependencies.store.runAppointmentTransaction(appointmentId, (appointment) => {
       if (!appointment || appointment.pageSlug !== context.pageSlug) {
         throw new AdminAppointmentsError(404, "APPOINTMENT_NOT_FOUND", "Agendamento não encontrado.");
       }
-      return nextStatus(appointment.status, action);
+      return resolveNextAppointmentStatus(appointment.status, action);
     });
     return Response.json(
       { ok: true, appointment: { id: appointmentId, status } },

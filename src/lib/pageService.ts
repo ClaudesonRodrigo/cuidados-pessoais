@@ -262,18 +262,6 @@ export const getAppointmentsByCustomer = async (pageSlug: string, customerId: st
     }
 };
 
-// STRIPE 4C-C2 debt: only the Master/superadmin cross-tenant view may use this
-// Web SDK writer. Owner agenda mutations must use adminAppointmentsClient.
-export const updateAppointmentStatusForMaster = async (appointmentId: string, status: 'confirmed' | 'cancelled' | 'completed'): Promise<void> => {
-    try {
-        const appRef = doc(db, "appointments", appointmentId);
-        await updateDoc(appRef, { status });
-    } catch (error) {
-        console.error("Erro ao atualizar status:", error);
-        throw error;
-    }
-};
-
 export const updatePageCoupons = async (pageSlug: string, coupons: CouponData[]): Promise<void> => {
   const pageDocRef = doc(db, "pages", pageSlug);
   await updateDoc(pageDocRef, { coupons });

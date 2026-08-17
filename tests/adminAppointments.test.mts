@@ -326,17 +326,17 @@ test("client Owner usa token/API e não importa Firestore nem envia tenant", asy
   }
 });
 
-test("dashboard migra Owner, limita Cancelar e preserva dívida Master C2", async () => {
+test("dashboard preserva Owner e migra Master C2-A", async () => {
   const [dashboard, pageService] = await Promise.all([
     readFile("src/app/admin/dashboard/page.tsx", "utf8"),
     readFile("src/lib/pageService.ts", "utf8"),
   ]);
   assert.match(dashboard, /updateAdminAppointmentStatus\(id, action\)/);
   assert.match(dashboard, /isSuperAdmin && adminViewId/);
-  assert.match(dashboard, /updateAppointmentStatusForMaster/);
+  assert.match(dashboard, /updateMasterAppointmentStatus\(adminViewId, id, action\)/);
   assert.match(dashboard, /app\.status === 'pending' \|\| app\.status === 'confirmed'/);
   assert.equal(pageService.includes("export const updateAppointmentStatus ="), false);
-  assert.match(pageService, /STRIPE 4C-C2 debt/);
+  assert.equal(pageService.includes("updateAppointmentStatusForMaster"), false);
 });
 
 test("serviço reutiliza requireCommercialAccess sem entitlement financeiro duplicado", async () => {

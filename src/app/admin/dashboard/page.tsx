@@ -7,7 +7,7 @@ import { signOutUser } from '@/lib/authService';
 import {
   getPageDataForUser,
   updatePageTheme, updatePageBackground, updatePageCoupons,
-  getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateAppointmentStatusForMaster, updateUserPlan,
+  getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateUserPlan,
   addLoyaltyPoint, getTransactionsByDate, addTransaction, deleteTransaction,
   PageData, LinkData, CouponData, AppointmentData, TransactionData
 } from '@/lib/pageService';
@@ -33,6 +33,7 @@ import {
 } from '@/lib/adminServicesClient';
 import { updateAdminProfile } from '@/lib/adminProfileClient';
 import { updateAdminAppointmentStatus, type AdminAppointmentAction } from '@/lib/adminAppointmentsClient';
+import { updateMasterAppointmentStatus } from '@/lib/masterAppointmentsClient';
 import { buildProfileSchedule, readLunchInterval } from '@/lib/adminProfileSchedule';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
@@ -347,8 +348,7 @@ export default function DashboardPage() {
       setConfirmData({ isOpen: true, title: "Confirmar", desc: "Mudar status?", action: async () => {
           const newStatus = action === 'confirm' ? 'confirmed' : action === 'cancel' ? 'cancelled' : 'completed';
           if (isSuperAdmin && adminViewId) {
-            // Temporary 4C-C2 path: C1 intentionally has no Master tenant authority.
-            await updateAppointmentStatusForMaster(id, newStatus);
+            await updateMasterAppointmentStatus(adminViewId, id, action);
           } else {
             await updateAdminAppointmentStatus(id, action);
           }
