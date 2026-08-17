@@ -32,6 +32,7 @@ import {
   updateAdminService,
 } from '@/lib/adminServicesClient';
 import { updateAdminProfile } from '@/lib/adminProfileClient';
+import { buildProfileSchedule, readLunchInterval } from '@/lib/adminProfileSchedule';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
@@ -90,6 +91,7 @@ export default function DashboardPage() {
   const [schedClose, setSchedClose] = useState('19:00');
   const [schedLunchStart, setSchedLunchStart] = useState('');
   const [schedLunchEnd, setSchedLunchEnd] = useState('');
+  const [hasLunchInterval, setHasLunchInterval] = useState(false);
   const [schedDays, setSchedDays] = useState<number[]>([1, 2, 3, 4, 5, 6]); 
   const [isUploadingProfile, setIsUploadingProfile] = useState(false);
   
@@ -153,10 +155,16 @@ export default function DashboardPage() {
             setEditingProfileWhatsapp(loadedWhats);
             setEditingProfilePix((data as any).pixKey || '');
             setIsOpenStore(data.isOpen !== false);
+            const lunchInterval = readLunchInterval(data.schedule);
+            setHasLunchInterval(lunchInterval.enabled);
+            setSchedLunchStart(lunchInterval.lunchStart);
+            setSchedLunchEnd(lunchInterval.lunchEnd);
             if (data.schedule) {
                 setSchedOpen(data.schedule.open || '09:00'); setSchedClose(data.schedule.close || '19:00');
-                setSchedLunchStart(data.schedule.lunchStart || ''); setSchedLunchEnd(data.schedule.lunchEnd || '');
                 setSchedDays(data.schedule.workingDays || [1, 2, 3, 4, 5, 6]);
+            } else {
+                setSchedOpen('09:00'); setSchedClose('19:00');
+                setSchedDays([1, 2, 3, 4, 5, 6]);
             }
           } else if (isSuperAdmin) {
             setActiveTab('master');
@@ -307,14 +315,15 @@ export default function DashboardPage() {
         return showToast("Assinatura necessária para alterar o perfil.", 'error');
       }
       const whatsappToSave = editingProfileWhatsapp ? `55${editingProfileWhatsapp.replace(/\D/g, '')}` : '';
-      const schedule = {
+      const scheduleResult = buildProfileSchedule({
         open: schedOpen,
         close: schedClose,
         workingDays: schedDays,
-        ...(schedLunchStart && schedLunchEnd
-          ? { lunchStart: schedLunchStart, lunchEnd: schedLunchEnd }
-          : {}),
-      };
+        lunchEnabled: hasLunchInterval,
+        lunchStart: schedLunchStart,
+        lunchEnd: schedLunchEnd,
+      });
+      if (!scheduleResult.ok) return showToast(scheduleResult.message, 'error');
       try {
         await updateAdminProfile({
           title: editingProfileTitle,
@@ -323,7 +332,7 @@ export default function DashboardPage() {
           isOpen: isOpenStore,
           whatsapp: whatsappToSave,
           pixKey: editingProfilePix,
-          schedule,
+          schedule: scheduleResult.schedule,
         });
         showToast("Perfil salvo!");
         await fetchPageData();
@@ -643,7 +652,30 @@ export default function DashboardPage() {
                         <button onClick={handleSaveProfile} className="w-full bg-linear-to-r from-purple-600 to-pink-500 text-white px-8 py-5 rounded-[1.8rem] font-black uppercase tracking-widest text-[11px] shadow-2xl shadow-purple-900/30 hover:scale-[1.01] transition transform active:scale-95 flex items-center justify-center gap-3"><FaSave size={14}/> Salvar Configurações</button>
                     </div>
                  </div>
-                 <div className="bg-white p-8 rounded-[2.5rem] border border-purple-50 shadow-xl shadow-purple-50 space-y-6"> <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2"><FaClock className="text-purple-400"/> Horários de Atendimento</h3> <div className="grid md:grid-cols-2 gap-8"> <div className="space-y-4"> <div className="flex gap-3"><input type="time" value={schedOpen} onChange={e => setSchedOpen(e.target.value)} className="flex-1 bg-gray-50 border border-purple-50 rounded-2xl p-4 font-bold text-center outline-none focus:border-purple-400 shadow-inner"/><input type="time" value={schedClose} onChange={e => setSchedClose(e.target.value)} className="flex-1 bg-gray-50 border border-purple-50 rounded-2xl p-4 font-bold text-center outline-none focus:border-purple-400 shadow-inner"/></div> </div> <div className="space-y-4"> <div className="flex flex-wrap gap-2"> {['D','S','T','Q','Q','S','S'].map((d, i) => ( <button key={i} onClick={() => setSchedDays(prev => prev.includes(i) ? prev.filter(day => day !== i) : [...prev, i].sort())} className={`w-10 h-10 rounded-xl font-black text-xs transition-all border ${schedDays.includes(i) ? 'bg-purple-600 border-purple-600 text-white shadow-lg' : 'bg-gray-50 border-purple-50 text-gray-400 hover:border-purple-200'}`}>{d}</button> ))} </div> </div> </div> </div>
+                 <div className="bg-white p-8 rounded-[2.5rem] border border-purple-50 shadow-xl shadow-purple-50 space-y-6">
+                    <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2"><FaClock className="text-purple-400"/> Horários de Atendimento</h3>
+                    <div className="grid gap-8 md:grid-cols-2">
+                        <div className="space-y-5">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <label className="space-y-1.5"><span className="text-[10px] font-black text-purple-300 uppercase tracking-widest ml-1">Início do expediente</span><input type="time" value={schedOpen} onChange={e => setSchedOpen(e.target.value)} className="w-full min-w-0 bg-gray-50 border border-purple-50 rounded-2xl p-4 font-bold text-center outline-none focus:border-purple-400 shadow-inner"/></label>
+                                <label className="space-y-1.5"><span className="text-[10px] font-black text-purple-300 uppercase tracking-widest ml-1">Fim do expediente</span><input type="time" value={schedClose} onChange={e => setSchedClose(e.target.value)} className="w-full min-w-0 bg-gray-50 border border-purple-50 rounded-2xl p-4 font-bold text-center outline-none focus:border-purple-400 shadow-inner"/></label>
+                            </div>
+                            <label className="flex items-center gap-3 rounded-2xl border border-purple-50 bg-gray-50 px-4 py-3 cursor-pointer">
+                                <input type="checkbox" checked={hasLunchInterval} onChange={e => setHasLunchInterval(e.target.checked)} className="h-5 w-5 accent-purple-600"/>
+                                <span className="text-xs font-black text-gray-700 uppercase tracking-wider">Possui intervalo</span>
+                            </label>
+                            {hasLunchInterval && (
+                                <div className="grid grid-cols-1 gap-3 rounded-2xl border border-purple-100 bg-purple-50/40 p-4 sm:grid-cols-2">
+                                    <label className="space-y-1.5"><span className="text-[10px] font-black text-purple-400 uppercase tracking-widest ml-1">Início do intervalo</span><input type="time" value={schedLunchStart} onChange={e => setSchedLunchStart(e.target.value)} className="w-full min-w-0 bg-white border border-purple-100 rounded-2xl p-4 font-bold text-center outline-none focus:border-purple-400 shadow-inner"/></label>
+                                    <label className="space-y-1.5"><span className="text-[10px] font-black text-purple-400 uppercase tracking-widest ml-1">Fim do intervalo</span><input type="time" value={schedLunchEnd} onChange={e => setSchedLunchEnd(e.target.value)} className="w-full min-w-0 bg-white border border-purple-100 rounded-2xl p-4 font-bold text-center outline-none focus:border-purple-400 shadow-inner"/></label>
+                                </div>
+                            )}
+                        </div>
+                        <div className="space-y-4">
+                            <div className="flex flex-wrap gap-2"> {['D','S','T','Q','Q','S','S'].map((d, i) => ( <button key={i} onClick={() => setSchedDays(prev => prev.includes(i) ? prev.filter(day => day !== i) : [...prev, i].sort())} className={`w-10 h-10 rounded-xl font-black text-xs transition-all border ${schedDays.includes(i) ? 'bg-purple-600 border-purple-600 text-white shadow-lg' : 'bg-gray-50 border-purple-50 text-gray-400 hover:border-purple-200'}`}>{d}</button> ))} </div>
+                        </div>
+                    </div>
+                 </div>
              </div>
         )}
 
