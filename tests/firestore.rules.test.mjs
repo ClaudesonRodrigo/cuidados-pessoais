@@ -482,8 +482,8 @@ for (const [id, status] of [
   ["a-pending", "confirmed"], ["a-pending", "cancelled"],
   ["a-confirmed", "completed"], ["a-confirmed", "cancelled"],
 ]) {
-  test(`owner realiza transição permitida ${id} → ${status}`, async () => {
-    await assertSucceeds(updateDoc(doc(db("ownerA"), `appointments/${id}`), { status }));
+  test(`owner não realiza update direto ${id} → ${status}`, async () => {
+    await assertFails(updateDoc(doc(db("ownerA"), `appointments/${id}`), { status }));
   });
 }
 
@@ -500,6 +500,26 @@ test("appointment delete é negado a cliente/owner e permitido ao superadmin", a
   await assertFails(deleteDoc(doc(db("customerA"), "appointments/a-pending")));
   await assertFails(deleteDoc(doc(db("ownerA"), "appointments/a-pending")));
   await assertSucceeds(deleteDoc(doc(db("officialSuperAdmin"), "appointments/a-pending")));
+});
+
+test("owner não altera startAt nem customerId", async () => {
+  const owner = db("ownerA");
+  await assertFails(updateDoc(doc(owner, "appointments/a-pending"), { startAt: END }));
+  await assertFails(updateDoc(doc(owner, "appointments/a-pending"), { customerId: "customer-b" }));
+});
+
+test("owner não atualiza appointment cross-tenant", async () => {
+  await assertFails(updateDoc(doc(db("ownerA"), "appointments/b-pending"), { status: "cancelled" }));
+});
+
+test("customer não cancela appointment alheio", async () => {
+  await assertFails(updateDoc(doc(db("customerA"), "appointments/b-pending"), { status: "cancelled" }));
+});
+
+test("superadmin preserva update direto de appointment", async () => {
+  await assertSucceeds(updateDoc(doc(db("officialSuperAdmin"), "appointments/a-pending"), {
+    status: "confirmed",
+  }));
 });
 
 test("cliente não possui qualquer acesso a transactions", async () => {

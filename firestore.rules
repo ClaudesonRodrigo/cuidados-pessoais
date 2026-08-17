@@ -69,17 +69,6 @@ service cloud.firestore {
              resource.data.status in ['pending', 'confirmed'];
     }
 
-    function ownerCanTransitionAppointment() {
-      return ownsExistingTenant() &&
-             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
-             (
-               (resource.data.status == 'pending' &&
-                request.resource.data.status in ['confirmed', 'cancelled']) ||
-               (resource.data.status == 'confirmed' &&
-                request.resource.data.status in ['completed', 'cancelled'])
-             );
-    }
-
     function validTransaction(data) {
       return data.keys().hasOnly([
                'pageSlug', 'type', 'description', 'value', 'category', 'date', 'createdAt'
@@ -155,8 +144,7 @@ service cloud.firestore {
                            resource.data.customerId == request.auth.uid) ||
                           ownsExistingTenant();
       allow update: if isSuperAdmin() ||
-                       customerCanCancelAppointment() ||
-                       ownerCanTransitionAppointment();
+                       customerCanCancelAppointment();
       allow delete: if isSuperAdmin();
     }
 

@@ -7,7 +7,7 @@ import { signOutUser } from '@/lib/authService';
 import {
   getPageDataForUser,
   updatePageTheme, updatePageBackground, updatePageCoupons,
-  getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateAppointmentStatus, updateUserPlan,
+  getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateAppointmentStatusForMaster, updateUserPlan,
   addLoyaltyPoint, getTransactionsByDate, addTransaction, deleteTransaction,
   PageData, LinkData, CouponData, AppointmentData, TransactionData
 } from '@/lib/pageService';
@@ -32,6 +32,7 @@ import {
   updateAdminService,
 } from '@/lib/adminServicesClient';
 import { updateAdminProfile } from '@/lib/adminProfileClient';
+import { updateAdminAppointmentStatus, type AdminAppointmentAction } from '@/lib/adminAppointmentsClient';
 import { buildProfileSchedule, readLunchInterval } from '@/lib/adminProfileSchedule';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
@@ -342,9 +343,15 @@ export default function DashboardPage() {
       }
   };
 
-  const handleStatusChange = async (id: string, newStatus: any, isFinancialTab = false, customerId?: string) => {
+  const handleStatusChange = async (id: string, action: AdminAppointmentAction, isFinancialTab = false, customerId?: string) => {
       setConfirmData({ isOpen: true, title: "Confirmar", desc: "Mudar status?", action: async () => {
-          await updateAppointmentStatus(id, newStatus);
+          const newStatus = action === 'confirm' ? 'confirmed' : action === 'cancel' ? 'cancelled' : 'completed';
+          if (isSuperAdmin && adminViewId) {
+            // Temporary 4C-C2 path: C1 intentionally has no Master tenant authority.
+            await updateAppointmentStatusForMaster(id, newStatus);
+          } else {
+            await updateAdminAppointmentStatus(id, action);
+          }
           showToast("Atualizado!");
           isFinancialTab ? handleFetchFinancial() : fetchUpcoming();
           if (newStatus === 'completed' && customerId && pageSlug) {
@@ -519,9 +526,9 @@ export default function DashboardPage() {
                                 <div className="flex justify-between items-center"><div className="flex flex-col"><span className="text-lg font-black text-gray-900 tracking-tighter">{start.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</span><span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{app.customerName}</span></div><span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${app.status === 'confirmed' ? 'bg-blue-50 text-blue-500 border-blue-100' : 'bg-gray-100 text-gray-400 border-gray-200'}`}>{app.status}</span></div>
                                 <div className="text-[11px] font-medium text-gray-500 leading-relaxed border-t border-purple-50/50 pt-4">{app.serviceName} • <span className="font-bold text-purple-600">R$ {app.totalValue.toFixed(2)}</span></div>
                                 <div className="flex gap-3 mt-2">
-                                    {app.status === 'pending' && <button onClick={() => handleStatusChange(app.id!, 'confirmed')} className="flex-1 bg-green-500 text-white p-3 rounded-2xl text-[10px] font-black uppercase">Confirmar</button>}
-                                    {app.status === 'confirmed' && <button onClick={() => handleStatusChange(app.id!, 'completed', false, app.customerId)} className="flex-1 bg-purple-600 text-white p-3 rounded-2xl text-[10px] font-black uppercase">Concluir</button>}
-                                    {app.status !== 'cancelled' && <button onClick={() => handleStatusChange(app.id!, 'cancelled')} className="bg-white border border-red-100 text-red-400 p-3 rounded-2xl text-[10px] font-black uppercase">Cancelar</button>}
+                                    {app.status === 'pending' && <button onClick={() => handleStatusChange(app.id!, 'confirm')} className="flex-1 bg-green-500 text-white p-3 rounded-2xl text-[10px] font-black uppercase">Confirmar</button>}
+                                    {app.status === 'confirmed' && <button onClick={() => handleStatusChange(app.id!, 'complete', false, app.customerId)} className="flex-1 bg-purple-600 text-white p-3 rounded-2xl text-[10px] font-black uppercase">Concluir</button>}
+                                    {(app.status === 'pending' || app.status === 'confirmed') && <button onClick={() => handleStatusChange(app.id!, 'cancel')} className="bg-white border border-red-100 text-red-400 p-3 rounded-2xl text-[10px] font-black uppercase">Cancelar</button>}
                                 </div>
                             </div>
                         )
