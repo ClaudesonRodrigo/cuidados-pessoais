@@ -2,7 +2,7 @@
 
 import {
   doc, getDoc, updateDoc, DocumentData,
-  collection, query, where, getDocs, orderBy, limit, Timestamp, addDoc, deleteDoc, setDoc
+  collection, query, where, getDocs, orderBy, limit, Timestamp, setDoc
 } from "firebase/firestore";
 import { db } from "./firebaseClient";
 
@@ -362,18 +362,6 @@ export const addLoyaltyPoint = async (pageSlug: string, customerId: string): Pro
 
 // --- FINANCEIRO PDV ---
 
-export const addTransaction = async (data: TransactionData): Promise<void> => {
-  try {
-    await addDoc(collection(db, "transactions"), {
-      ...data,
-      createdAt: Timestamp.now()
-    });
-  } catch (error) {
-    console.error("Erro ao criar transação:", error);
-    throw error;
-  }
-};
-
 export const getTransactionsByDate = async (pageSlug: string, dateStart: Date, dateEnd: Date): Promise<TransactionData[]> => {
   try {
     const q = query(
@@ -388,8 +376,4 @@ export const getTransactionsByDate = async (pageSlug: string, dateStart: Date, d
     console.error("Erro ao buscar transações:", error);
     return [];
   }
-};
-
-export const deleteTransaction = async (id: string): Promise<void> => {
-  await deleteDoc(doc(db, "transactions", id));
 };

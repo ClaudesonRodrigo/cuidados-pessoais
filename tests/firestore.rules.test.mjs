@@ -536,18 +536,10 @@ test("cliente não possui qualquer acesso a transactions", async () => {
   await assertFails(deleteDoc(doc(client, "transactions/transaction-a")));
 });
 
-test("owner cria transaction no próprio tenant e não no tenant B", async () => {
+test("owner não cria transaction pelo Web SDK", async () => {
   const owner = db("ownerA");
-  await assertSucceeds(addDoc(collection(owner, "transactions"), transaction()));
+  await assertFails(addDoc(collection(owner, "transactions"), transaction()));
   await assertFails(addDoc(collection(owner, "transactions"), transaction({ pageSlug: "salao-b" })));
-});
-
-test("transaction rejeita valor não positivo, type inválido e campos extras", async () => {
-  const owner = db("ownerA");
-  await assertFails(addDoc(collection(owner, "transactions"), transaction({ value: 0 })));
-  await assertFails(addDoc(collection(owner, "transactions"), transaction({ value: -1 })));
-  await assertFails(addDoc(collection(owner, "transactions"), transaction({ type: "transfer" })));
-  await assertFails(addDoc(collection(owner, "transactions"), transaction({ admin: true })));
 });
 
 test("query real de transactions por pageSlug e date é permitida ao owner", async () => {
@@ -566,17 +558,25 @@ test("owner não lista transactions de B nem globalmente", async () => {
   await assertFails(getDocs(collection(owner, "transactions")));
 });
 
-test("transaction update preserva pageSlug e createdAt", async () => {
+test("owner não atualiza nem exclui transaction pelo Web SDK", async () => {
   const ref = doc(db("ownerA"), "transactions/transaction-a");
-  await assertSucceeds(updateDoc(ref, { value: 60, description: "Atualizada" }));
-  await assertFails(updateDoc(ref, { pageSlug: "salao-b" }));
-  await assertFails(updateDoc(ref, { createdAt: END }));
+  await assertFails(updateDoc(ref, { value: 60, description: "Atualizada" }));
+  await assertFails(deleteDoc(ref));
 });
 
-test("owner exclui transaction própria, mas não de B", async () => {
-  const owner = db("ownerA");
-  await assertSucceeds(deleteDoc(doc(owner, "transactions/transaction-a")));
-  await assertFails(deleteDoc(doc(owner, "transactions/transaction-b")));
+test("superadmin lê transactions, mas não escreve pelo Web SDK", async () => {
+  const admin = db("officialSuperAdmin");
+  await assertSucceeds(getDoc(doc(admin, "transactions/transaction-a")));
+  assert.equal((await assertSucceeds(getDocs(collection(admin, "transactions")))).size, 2);
+  await assertFails(addDoc(collection(admin, "transactions"), transaction()));
+  await assertFails(updateDoc(doc(admin, "transactions/transaction-a"), { value: 60 }));
+  await assertFails(deleteDoc(doc(admin, "transactions/transaction-a")));
+});
+
+test("público não lê transactions", async () => {
+  const publicDb = db("public");
+  await assertFails(getDoc(doc(publicDb, "transactions/transaction-a")));
+  await assertFails(getDocs(collection(publicDb, "transactions")));
 });
 
 test("cliente obtém loyalty próprio por ID coerente", async () => {

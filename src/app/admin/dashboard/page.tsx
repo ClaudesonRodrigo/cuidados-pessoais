@@ -8,7 +8,7 @@ import {
   getPageDataForUser,
   updatePageTheme, updatePageBackground, updatePageCoupons,
   getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateUserPlan,
-  getTransactionsByDate, addTransaction, deleteTransaction,
+  getTransactionsByDate,
   PageData, LinkData, CouponData, AppointmentData, TransactionData
 } from '@/lib/pageService';
 import { 
@@ -34,6 +34,12 @@ import {
 import { updateAdminProfile } from '@/lib/adminProfileClient';
 import { updateAdminAppointmentStatus, type AdminAppointmentAction } from '@/lib/adminAppointmentsClient';
 import { updateMasterAppointmentStatus } from '@/lib/masterAppointmentsClient';
+import {
+  createAdminTransaction,
+  deleteAdminTransaction,
+  type TransactionMutationInput,
+} from '@/lib/adminTransactionsClient';
+import { createMasterTransaction, deleteMasterTransaction } from '@/lib/masterTransactionsClient';
 import { buildProfileSchedule, readLunchInterval } from '@/lib/adminProfileSchedule';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
@@ -306,8 +312,25 @@ export default function DashboardPage() {
   const handleDeleteTransaction = async (id: string) => {
     setConfirmData({
         isOpen: true, title: "Excluir Registro", desc: "Apagar movimentação?", isDanger: true, confirmText: "Apagar",
-        action: async () => { await deleteTransaction(id); showToast("Removido."); handleFetchFinancial(); }
+        action: async () => {
+          if (isSuperAdmin && adminViewId) {
+            await deleteMasterTransaction(adminViewId, id);
+          } else {
+            await deleteAdminTransaction(id);
+          }
+          showToast("Removido.");
+          await handleFetchFinancial();
+        }
     });
+  };
+
+  const handleCreateTransaction = async (input: TransactionMutationInput) => {
+    if (isSuperAdmin && adminViewId) {
+      await createMasterTransaction(adminViewId, input);
+    } else {
+      await createAdminTransaction(input);
+    }
+    await handleFetchFinancial();
   };
 
   const handleSaveProfile = async () => {
@@ -424,7 +447,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-[#fdfaf9] pb-20 font-sans selection:bg-purple-100">
       <UpgradeModal isOpen={isUpgradeModalOpen} onClose={() => setIsUpgradeModalOpen(false)} />
       <ActionModal isOpen={confirmData.isOpen} onClose={() => setConfirmData(prev => ({...prev, isOpen: false}))} onConfirm={confirmData.action} title={confirmData.title} description={confirmData.desc} isDanger={confirmData.isDanger} confirmText={confirmData.confirmText} />
-      <TransactionModal isOpen={isTransactionModalOpen} onClose={() => setIsTransactionModalOpen(false)} onSave={async (d) => { await addTransaction(d); handleFetchFinancial(); }} pageSlug={pageSlug!} services={pageData?.links || []} />
+      <TransactionModal isOpen={isTransactionModalOpen} onClose={() => setIsTransactionModalOpen(false)} onSave={handleCreateTransaction} services={pageData?.links || []} />
       
       {toast && ( <div className={`fixed top-4 right-4 z-70 px-6 py-4 rounded-2xl shadow-2xl text-white font-bold animate-beauty flex items-center gap-3 ${toast.type === 'error' ? 'bg-red-500' : 'bg-purple-600'}`}> {toast.type === 'success' ? <FaCheck /> : <FaTimes />} {toast.msg} </div> )}
 

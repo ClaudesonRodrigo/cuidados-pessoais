@@ -152,16 +152,10 @@ service cloud.firestore {
     }
 
     match /transactions/{transactionId} {
-      allow create: if isSuperAdmin() ||
-                       (ownsNewTenant() && validTransaction(request.resource.data));
+      allow create: if false;
       allow get, list: if isSuperAdmin() || ownsExistingTenant();
-      allow update: if isSuperAdmin() ||
-                       (ownsExistingTenant() &&
-                        ownsNewTenant() &&
-                        request.resource.data.pageSlug == resource.data.pageSlug &&
-                        request.resource.data.createdAt == resource.data.createdAt &&
-                        validTransaction(request.resource.data));
-      allow delete: if isSuperAdmin() || ownsExistingTenant();
+      allow update: if false;
+      allow delete: if false;
     }
 
     match /loyalty/{loyaltyId} {

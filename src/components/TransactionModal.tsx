@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { FaTimes, FaMoneyBillWave, FaShoppingCart, FaArrowDown, FaArrowUp, FaSave } from 'react-icons/fa';
-import { LinkData, TransactionData } from '@/lib/pageService';
-import { Timestamp } from 'firebase/firestore';
+import type { TransactionMutationInput } from '@/lib/adminTransactionsClient';
+import type { LinkData } from '@/lib/pageService';
 
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: TransactionData) => Promise<void>;
-  pageSlug: string;
+  onSave: (data: TransactionMutationInput) => Promise<void>;
   services: LinkData[]; // Para o autocomplete na venda
 }
 
-export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onClose, onSave, pageSlug, services }) => {
+export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onClose, onSave, services }) => {
   const [type, setType] = useState<'income' | 'expense'>('income');
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
@@ -36,13 +35,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onCl
     setIsSaving(true);
     try {
         await onSave({
-            pageSlug,
             type,
             description,
             value: parseFloat(value.replace(',', '.')),
             category,
-            date: Timestamp.now(),
-            createdAt: Timestamp.now()
+            date: new Date().toISOString()
         });
         onClose();
     } catch (error) {
