@@ -326,7 +326,7 @@ test("client Owner usa token/API e não importa Firestore nem envia tenant", asy
   }
 });
 
-test("dashboard preserva Owner e migra Master C2-A", async () => {
+test("dashboard preserva ações Owner/Master e desativa fidelidade após complete", async () => {
   const [dashboard, pageService] = await Promise.all([
     readFile("src/app/admin/dashboard/page.tsx", "utf8"),
     readFile("src/lib/pageService.ts", "utf8"),
@@ -334,7 +334,12 @@ test("dashboard preserva Owner e migra Master C2-A", async () => {
   assert.match(dashboard, /updateAdminAppointmentStatus\(id, action\)/);
   assert.match(dashboard, /isSuperAdmin && adminViewId/);
   assert.match(dashboard, /updateMasterAppointmentStatus\(adminViewId, id, action\)/);
+  assert.match(dashboard, /handleStatusChange\(app\.id!, 'confirm'\)/);
+  assert.match(dashboard, /handleStatusChange\(app\.id!, 'cancel'\)/);
+  assert.match(dashboard, /handleStatusChange\(app\.id!, 'complete'\)/);
   assert.match(dashboard, /app\.status === 'pending' \|\| app\.status === 'confirmed'/);
+  assert.equal(dashboard.includes("addLoyaltyPoint"), false);
+  assert.equal(dashboard.includes("Fidelizar cliente?"), false);
   assert.equal(pageService.includes("export const updateAppointmentStatus ="), false);
   assert.equal(pageService.includes("updateAppointmentStatusForMaster"), false);
 });

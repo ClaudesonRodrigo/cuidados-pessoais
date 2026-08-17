@@ -8,7 +8,7 @@ import {
   getPageDataForUser,
   updatePageTheme, updatePageBackground, updatePageCoupons,
   getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateUserPlan,
-  addLoyaltyPoint, getTransactionsByDate, addTransaction, deleteTransaction,
+  getTransactionsByDate, addTransaction, deleteTransaction,
   PageData, LinkData, CouponData, AppointmentData, TransactionData
 } from '@/lib/pageService';
 import { 
@@ -344,9 +344,8 @@ export default function DashboardPage() {
       }
   };
 
-  const handleStatusChange = async (id: string, action: AdminAppointmentAction, isFinancialTab = false, customerId?: string) => {
+  const handleStatusChange = async (id: string, action: AdminAppointmentAction, isFinancialTab = false) => {
       setConfirmData({ isOpen: true, title: "Confirmar", desc: "Mudar status?", action: async () => {
-          const newStatus = action === 'confirm' ? 'confirmed' : action === 'cancel' ? 'cancelled' : 'completed';
           if (isSuperAdmin && adminViewId) {
             await updateMasterAppointmentStatus(adminViewId, id, action);
           } else {
@@ -354,9 +353,6 @@ export default function DashboardPage() {
           }
           showToast("Atualizado!");
           isFinancialTab ? handleFetchFinancial() : fetchUpcoming();
-          if (newStatus === 'completed' && customerId && pageSlug) {
-            setTimeout(() => setConfirmData({ isOpen: true, title: "Pontuar", desc: "Fidelizar cliente?", action: async () => { await addLoyaltyPoint(pageSlug, customerId); showToast("Pontuado!"); } }), 500);
-          }
       }});
   };
 
@@ -527,7 +523,7 @@ export default function DashboardPage() {
                                 <div className="text-[11px] font-medium text-gray-500 leading-relaxed border-t border-purple-50/50 pt-4">{app.serviceName} • <span className="font-bold text-purple-600">R$ {app.totalValue.toFixed(2)}</span></div>
                                 <div className="flex gap-3 mt-2">
                                     {app.status === 'pending' && <button onClick={() => handleStatusChange(app.id!, 'confirm')} className="flex-1 bg-green-500 text-white p-3 rounded-2xl text-[10px] font-black uppercase">Confirmar</button>}
-                                    {app.status === 'confirmed' && <button onClick={() => handleStatusChange(app.id!, 'complete', false, app.customerId)} className="flex-1 bg-purple-600 text-white p-3 rounded-2xl text-[10px] font-black uppercase">Concluir</button>}
+                                    {app.status === 'confirmed' && <button onClick={() => handleStatusChange(app.id!, 'complete')} className="flex-1 bg-purple-600 text-white p-3 rounded-2xl text-[10px] font-black uppercase">Concluir</button>}
                                     {(app.status === 'pending' || app.status === 'confirmed') && <button onClick={() => handleStatusChange(app.id!, 'cancel')} className="bg-white border border-red-100 text-red-400 p-3 rounded-2xl text-[10px] font-black uppercase">Cancelar</button>}
                                 </div>
                             </div>
