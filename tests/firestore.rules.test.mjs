@@ -475,7 +475,10 @@ test("cliente não confirma, completa ou altera horário", async () => {
   const client = db("customerA");
   await assertFails(updateDoc(doc(client, "appointments/a-pending"), { status: "confirmed" }));
   await assertFails(updateDoc(doc(client, "appointments/a-confirmed"), { status: "completed" }));
-  await assertFails(updateDoc(doc(client, "appointments/a-pending"), { startAt: END }));
+  await assertFails(updateDoc(doc(client, "appointments/a-pending"), {
+    status: "cancelled",
+    startAt: END,
+  }));
 });
 
 for (const [id, status] of [
@@ -516,8 +519,10 @@ test("customer não cancela appointment alheio", async () => {
   await assertFails(updateDoc(doc(db("customerA"), "appointments/b-pending"), { status: "cancelled" }));
 });
 
-test("superadmin preserva update direto de appointment", async () => {
-  await assertSucceeds(updateDoc(doc(db("officialSuperAdmin"), "appointments/a-pending"), {
+test("bypass Web SDK do superadmin em appointments está fechado", async () => {
+  const reference = doc(db("officialSuperAdmin"), "appointments/a-pending");
+  await assertSucceeds(getDoc(reference));
+  await assertFails(updateDoc(reference, {
     status: "confirmed",
   }));
 });

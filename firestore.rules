@@ -143,8 +143,7 @@ service cloud.firestore {
                           (isAuthenticated() &&
                            resource.data.customerId == request.auth.uid) ||
                           ownsExistingTenant();
-      allow update: if isSuperAdmin() ||
-                       customerCanCancelAppointment();
+      allow update: if customerCanCancelAppointment();
       allow delete: if isSuperAdmin();
     }
 
