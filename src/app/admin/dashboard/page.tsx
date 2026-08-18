@@ -32,6 +32,7 @@ import {
   updateAdminService,
 } from '@/lib/adminServicesClient';
 import { updateAdminProfile } from '@/lib/adminProfileClient';
+import { updateMasterProfile } from '@/lib/masterProfileClient';
 import { updateAdminAppointmentStatus, type AdminAppointmentAction } from '@/lib/adminAppointmentsClient';
 import { updateMasterAppointmentStatus } from '@/lib/masterAppointmentsClient';
 import {
@@ -350,7 +351,7 @@ export default function DashboardPage() {
       });
       if (!scheduleResult.ok) return showToast(scheduleResult.message, 'error');
       try {
-        await updateAdminProfile({
+        const update = {
           title: editingProfileTitle,
           bio: editingProfileBio,
           address: editingProfileAddress,
@@ -358,7 +359,12 @@ export default function DashboardPage() {
           whatsapp: whatsappToSave,
           pixKey: editingProfilePix,
           schedule: scheduleResult.schedule,
-        });
+        };
+        if (isSuperAdmin && adminViewId) {
+          await updateMasterProfile(adminViewId, update);
+        } else {
+          await updateAdminProfile(update);
+        }
         showToast("Perfil salvo!");
         await fetchPageData();
       } catch (error) {
@@ -400,7 +406,11 @@ export default function DashboardPage() {
     try {
       const url = await uploadToCloudinary(file);
       if (url) {
-        await updateAdminProfile({ profileImageUrl: url });
+        if (isSuperAdmin && adminViewId) {
+          await updateMasterProfile(adminViewId, { profileImageUrl: url });
+        } else {
+          await updateAdminProfile({ profileImageUrl: url });
+        }
         await fetchPageData();
       }
     } catch (error) {

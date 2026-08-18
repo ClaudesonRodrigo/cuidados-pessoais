@@ -14,7 +14,7 @@ const IMAGE_URL_MAX_LENGTH = 2_048;
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 type PageDocument = Record<string, unknown>;
-type ProfileUpdate = Record<string, unknown>;
+export type ProfileUpdate = Record<string, unknown>;
 
 export type AdminProfileStore = {
   runProfileTransaction(
@@ -33,6 +33,7 @@ type AdminProfileErrorCode =
   | "INVALID_REQUEST"
   | "TENANT_CONTEXT_REQUIRED"
   | "TENANT_INCONSISTENT"
+  | "MASTER_PROFILE_UNAVAILABLE"
   | "ADMIN_PROFILE_UNAVAILABLE";
 
 export class AdminProfileError extends Error {
@@ -57,7 +58,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const hasOwn = (value: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(value, key);
 
-const readJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
+export const readProfileJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
   if (request.headers.get("content-type")?.split(";", 1)[0].trim() !== "application/json") {
     return invalidRequest();
   }
@@ -189,7 +190,7 @@ const ALLOWED_FIELDS = new Set([
   "profileImageUrl",
 ]);
 
-const profileUpdate = (body: Record<string, unknown>): ProfileUpdate => {
+export const validateProfileUpdate = (body: Record<string, unknown>): ProfileUpdate => {
   if (Object.keys(body).length === 0 || Object.keys(body).some((key) => !ALLOWED_FIELDS.has(key))) {
     return invalidRequest();
   }
@@ -236,7 +237,7 @@ export const handleAdminProfileRequest = async (
       throw new AdminProfileError(409, "TENANT_CONTEXT_REQUIRED", "Contexto de tenant necessário.");
     }
 
-    const update = profileUpdate(await readJsonBody(request));
+    const update = validateProfileUpdate(await readProfileJsonBody(request));
     await dependencies.store.runProfileTransaction(context.pageSlug, (page) => {
       if (!page || page.userId !== context.ownerId || page.slug !== context.pageSlug) {
         throw new AdminProfileError(409, "TENANT_INCONSISTENT", "Tenant inconsistente.");
