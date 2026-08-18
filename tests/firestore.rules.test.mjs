@@ -172,26 +172,31 @@ after(async () => {
   await testEnv?.cleanup();
 });
 
-test("superadmin oficial possui autoridade global", async () => {
+test("superadmin preserva writes legítimos fora de plan e trialDeadline", async () => {
   const admin = db("officialSuperAdmin");
   await assertSucceeds(getDocs(collection(admin, "users")));
   await assertSucceeds(setDoc(doc(admin, "users/new-user"), { role: "admin" }));
-  await assertSucceeds(updateDoc(doc(admin, "pages/salao-a"), { plan: "free", trialDeadline: null }));
+  await assertSucceeds(updateDoc(doc(admin, "users/owner-a"), { displayName: "Owner A" }));
+  await assertSucceeds(updateDoc(doc(admin, "pages/salao-a"), { title: "Salão atualizado" }));
 });
 
-test("updateUserPlan funciona somente para o UID oficial nas duas coleções", async () => {
-  const admin = db("officialSuperAdmin");
-  await assertSucceeds(updateDoc(doc(admin, "users/owner-a"), { plan: "free", trialDeadline: null }));
-  const pages = await assertSucceeds(getDocs(query(
-    collection(admin, "pages"), where("userId", "==", "owner-a"),
-  )));
-  assert.equal(pages.size, 1);
-  await assertSucceeds(updateDoc(pages.docs[0].ref, { plan: "free", trialDeadline: null }));
-
-  const commonOwner = db("ownerA");
-  await assertFails(updateDoc(doc(commonOwner, "users/owner-a"), { plan: "pro", trialDeadline: END }));
-  await assertFails(updateDoc(doc(commonOwner, "pages/salao-a"), { plan: "pro", trialDeadline: END }));
-});
+for (const [collectionName, documentId] of [
+  ["users", "owner-a"],
+  ["pages", "salao-a"],
+]) {
+  for (const [field, value] of [[
+    "plan", "free",
+  ], [
+    "trialDeadline", null,
+  ]]) {
+    test(`superadmin Web SDK não altera ${collectionName}.${field}`, async () => {
+      await assertFails(updateDoc(
+        doc(db("officialSuperAdmin"), `${collectionName}/${documentId}`),
+        { [field]: value },
+      ));
+    });
+  }
+}
 
 for (const profile of ["customerA", "ownerA", "officialSuperAdmin"]) {
   for (const collectionName of ["billing", "billingCheckoutState"]) {

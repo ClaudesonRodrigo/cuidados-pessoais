@@ -114,7 +114,10 @@ service cloud.firestore {
                     (isAuthenticated() && request.auth.uid == userId);
       allow list: if isSuperAdmin();
       allow create: if isSuperAdmin();
-      allow update: if isSuperAdmin() ||
+      allow update: if (isSuperAdmin() &&
+                        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                          'plan', 'trialDeadline'
+                        ])) ||
                        (isAuthenticated() &&
                         request.auth.uid == userId &&
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -128,7 +131,10 @@ service cloud.firestore {
       allow list: if isSuperAdmin() ||
                      (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isSuperAdmin();
-      allow update: if isSuperAdmin() ||
+      allow update: if (isSuperAdmin() &&
+                        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                          'plan', 'trialDeadline'
+                        ])) ||
                        (isAuthenticated() &&
                         resource.data.userId == request.auth.uid &&
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly([

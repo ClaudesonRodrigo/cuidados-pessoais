@@ -283,16 +283,6 @@ export const findUserByEmail = async (email: string): Promise<(UserData & { uid:
   return snapshot.empty ? null : { uid: snapshot.docs[0].id, ...(snapshot.docs[0].data() as UserData) };
 };
 
-export const updateUserPlan = async (userId: string, newPlan: 'free' | 'pro'): Promise<void> => {
-  await updateDoc(doc(db, "users", userId), { plan: newPlan, trialDeadline: null });
-  const pagesRef = collection(db, "pages");
-  const q = query(pagesRef, where("userId", "==", userId));
-  const snapshot = await getDocs(q);
-  if (!snapshot.empty) {
-      const pageId = snapshot.docs[0].id;
-      await updateDoc(doc(db, "pages", pageId), { plan: newPlan, trialDeadline: null });
-  }
-};
 
 export const updateUserFiscalData = async (userId: string, cpfCnpj: string, phone: string): Promise<void> => {
   const userRef = doc(db, "users", userId);

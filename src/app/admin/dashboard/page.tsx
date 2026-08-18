@@ -7,10 +7,11 @@ import { signOutUser } from '@/lib/authService';
 import {
   getPageDataForUser,
   updatePageTheme, updatePageBackground, updatePageCoupons,
-  getAllUsers, getUpcomingAppointments, getAppointmentsByDate, updateUserPlan,
+  getAllUsers, getUpcomingAppointments, getAppointmentsByDate,
   getTransactionsByDate,
   PageData, LinkData, CouponData, AppointmentData, TransactionData
 } from '@/lib/pageService';
+import { updateMasterPlan } from '@/lib/masterPlanClient';
 import { 
   FaUserCog, FaSave, FaQrcode, FaTag, FaTrashAlt,
   FaMagic, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff, FaStore, FaArrowLeft, FaCalendarDay, FaFileInvoiceDollar, FaArrowUp, FaArrowDown, FaGem, FaShieldAlt
@@ -547,7 +548,7 @@ export default function DashboardPage() {
                                         <td className="p-5"><span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${u.plan === 'pro' ? 'bg-purple-600/20 text-purple-400 border-purple-600/30 shadow-lg' : 'bg-gray-800 text-gray-500 border-gray-700'}`}>{u.plan || 'FREE'}</span></td>
                                         <td className="p-5 text-right flex gap-3 justify-end">
                                             <button onClick={() => { setAdminViewId(u.uid); setActiveTab('agenda'); }} className="p-3 bg-purple-600 text-white rounded-xl shadow-lg hover:bg-purple-500 transition active:scale-95" title="Gerenciar"><FaStore size={14}/></button>
-                                            <button onClick={async () => { await updateUserPlan(u.uid, u.plan === 'pro' ? 'free' : 'pro'); getAllUsers().then(setAllUsers); showToast("Plano alterado!"); }} className={`p-3 rounded-xl border transition-all active:scale-95 ${u.plan === 'pro' ? 'border-red-500/30 text-red-500 bg-red-500/10' : 'border-green-500/30 text-green-500 bg-green-500/10'}`}>{u.plan === 'pro' ? <FaToggleOff size={16}/> : <FaToggleOn size={16}/>}</button>
+                                            <button onClick={async () => { await updateMasterPlan(u.uid, u.plan === 'pro' ? 'free' : 'pro'); getAllUsers().then(setAllUsers); showToast("Plano alterado!"); }} className={`p-3 rounded-xl border transition-all active:scale-95 ${u.plan === 'pro' ? 'border-red-500/30 text-red-500 bg-red-500/10' : 'border-green-500/30 text-green-500 bg-green-500/10'}`}>{u.plan === 'pro' ? <FaToggleOff size={16}/> : <FaToggleOn size={16}/>}</button>
                                         </td>
                                     </tr>
                                 ))}
