@@ -37,6 +37,7 @@ export type AdminServicesErrorCode =
   | "TENANT_INCONSISTENT"
   | "SERVICE_NOT_FOUND"
   | "SERVICE_STATE_INVALID"
+  | "MASTER_SERVICES_UNAVAILABLE"
   | "ADMIN_SERVICES_UNAVAILABLE";
 
 export class AdminServicesError extends Error {
@@ -149,7 +150,7 @@ const parseEditableFields = (
   return fields;
 };
 
-const readJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
+export const readServicesJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
   if (request.headers.get("content-type")?.split(";", 1)[0].trim() !== "application/json") {
     return invalidRequest();
   }
@@ -186,7 +187,7 @@ const readJsonBody = async (request: Request): Promise<Record<string, unknown>> 
   return parsed;
 };
 
-const assertLinksSize = (links: ServiceLink[]): void => {
+export const assertServiceLinksSize = (links: ServiceLink[]): void => {
   try {
     if (new TextEncoder().encode(JSON.stringify(links)).byteLength > MAX_CANONICAL_LINKS_BYTES) {
       throw new AdminServicesError(409, "SERVICE_STATE_INVALID", "Estado de serviços inválido.");
@@ -197,13 +198,13 @@ const assertLinksSize = (links: ServiceLink[]): void => {
   }
 };
 
-const canonicalLinks = (page: PageDocument): ServiceLink[] => {
+export const canonicalServiceLinks = (page: PageDocument): ServiceLink[] => {
   const value = page.links ?? [];
   if (!Array.isArray(value) || value.length > MAX_LINKS || value.some((link) => !isRecord(link))) {
     throw new AdminServicesError(409, "SERVICE_STATE_INVALID", "Estado de serviços inválido.");
   }
   const links = value as ServiceLink[];
-  assertLinksSize(links);
+  assertServiceLinksSize(links);
   return links;
 };
 
@@ -214,7 +215,7 @@ const serviceAt = (links: ServiceLink[], index: number): ServiceLink => {
   return links[index];
 };
 
-const parseMutation = (action: AdminServiceAction, body: Record<string, unknown>) => {
+export const parseServiceMutation = (action: AdminServiceAction, body: Record<string, unknown>) => {
   if (action === "CREATE") {
     requireOnlyKeys(body, EDITABLE_KEYS);
     return { fields: parseEditableFields(body, true) };
@@ -237,9 +238,9 @@ const parseMutation = (action: AdminServiceAction, body: Record<string, unknown>
   return { indices };
 };
 
-const applyMutation = (
+export const applyServiceMutation = (
   action: AdminServiceAction,
-  parsed: ReturnType<typeof parseMutation>,
+  parsed: ReturnType<typeof parseServiceMutation>,
   links: ServiceLink[],
 ): ServiceLink[] => {
   if (action === "CREATE") {
@@ -284,7 +285,7 @@ const errorResponse = (error: AdminServicesError): Response =>
     { status: error.status, headers: { "Cache-Control": "no-store" } },
   );
 
-const ACTION_METHOD: Record<AdminServiceAction, string> = {
+export const SERVICE_ACTION_METHOD: Record<AdminServiceAction, string> = {
   CREATE: "POST",
   EDIT: "PATCH",
   DELETE: "DELETE",
@@ -298,7 +299,7 @@ export const handleAdminServicesRequest = async (
 ): Promise<Response> => {
   let ownerId: string | undefined;
   try {
-    if (request.method !== ACTION_METHOD[action] || new URL(request.url).search.length > 0) {
+    if (request.method !== SERVICE_ACTION_METHOD[action] || new URL(request.url).search.length > 0) {
       return invalidRequest();
     }
     const context = await dependencies.requireCommercialAccess(request);
@@ -311,8 +312,8 @@ export const handleAdminServicesRequest = async (
       );
     }
 
-    const body = await readJsonBody(request);
-    const parsed = parseMutation(action, body);
+    const body = await readServicesJsonBody(request);
+    const parsed = parseServiceMutation(action, body);
     await dependencies.store.runLinksTransaction(context.pageSlug, (page) => {
       if (
         !page ||
@@ -321,8 +322,8 @@ export const handleAdminServicesRequest = async (
       ) {
         throw new AdminServicesError(409, "TENANT_INCONSISTENT", "Tenant inconsistente.");
       }
-      const links = applyMutation(action, parsed, canonicalLinks(page));
-      assertLinksSize(links);
+      const links = applyServiceMutation(action, parsed, canonicalServiceLinks(page));
+      assertServiceLinksSize(links);
       return links;
     });
 

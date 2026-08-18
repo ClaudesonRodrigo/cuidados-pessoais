@@ -31,6 +31,12 @@ import {
   reorderAdminServices,
   updateAdminService,
 } from '@/lib/adminServicesClient';
+import {
+  createMasterService,
+  deleteMasterService,
+  reorderMasterServices,
+  updateMasterService,
+} from '@/lib/masterServicesClient';
 import { updateAdminProfile } from '@/lib/adminProfileClient';
 import { updateMasterProfile } from '@/lib/masterProfileClient';
 import { updateAdminAppointmentStatus, type AdminAppointmentAction } from '@/lib/adminAppointmentsClient';
@@ -263,7 +269,13 @@ export default function DashboardPage() {
 
     try {
       if (editingIndex === null) {
-        await createAdminService(editableFields);
+        if (isSuperAdmin && adminViewId) {
+          await createMasterService(adminViewId, editableFields);
+        } else {
+          await createAdminService(editableFields);
+        }
+      } else if (isSuperAdmin && adminViewId) {
+        await updateMasterService(adminViewId, editingIndex, editableFields);
       } else {
         await updateAdminService(editingIndex, editableFields);
       }
@@ -288,7 +300,11 @@ export default function DashboardPage() {
          isOpen: true, title: "Remover", desc: `Apagar "${link.title}"?`, isDanger: true, confirmText: "Apagar",
          action: async () => {
            try {
-             await deleteAdminService(index);
+             if (isSuperAdmin && adminViewId) {
+               await deleteMasterService(adminViewId, index);
+             } else {
+               await deleteAdminService(index);
+             }
              resetServiceForm();
              await fetchPageData();
              showToast("Removido.");
@@ -441,7 +457,11 @@ export default function DashboardPage() {
       if (oldIndex !== -1 && newIndex !== -1) {
         try {
           const indices = arrayMove(pageData.links.map((_, index) => index), oldIndex, newIndex);
-          await reorderAdminServices(indices);
+          if (isSuperAdmin && adminViewId) {
+            await reorderMasterServices(adminViewId, indices);
+          } else {
+            await reorderAdminServices(indices);
+          }
           await fetchPageData();
         } catch (error) {
           console.error(error);
