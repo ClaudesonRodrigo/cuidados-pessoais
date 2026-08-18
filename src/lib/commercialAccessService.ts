@@ -105,6 +105,22 @@ const resolveLegacySources = (
       : null,
   };
 };
+export const resolveCommercialEntitlementForAccounts = (
+  ownerId: string,
+  user: AccountDocument,
+  page: AccountDocument,
+  billing: BillingRecord | null,
+  now: Date,
+): CommercialEntitlement => {
+  const { legacyGrant, promotionalTrial } = resolveLegacySources(ownerId, user, page);
+  return resolveCommercialEntitlement({
+    identity: { uid: ownerId },
+    billing,
+    legacyGrant,
+    promotionalTrial,
+    now,
+  });
+};
 
 export const resolveCommercialContextSnapshot = async (
   identity: CommercialIdentity,
@@ -157,14 +173,13 @@ export const resolveCommercialContextSnapshot = async (
     throw new CommercialAccessError(403, "TENANT_INCONSISTENT", "Tenant comercial inconsistente.");
   }
 
-  const { legacyGrant, promotionalTrial } = resolveLegacySources(ownerId, user, page);
-  const entitlement = resolveCommercialEntitlement({
-    identity: { uid: ownerId },
+  const entitlement = resolveCommercialEntitlementForAccounts(
+    ownerId,
+    user,
+    page,
     billing,
-    legacyGrant,
-    promotionalTrial,
     now,
-  });
+  );
 
   return {
     context: { identity: { uid: ownerId }, ownerId, pageSlug, entitlement },

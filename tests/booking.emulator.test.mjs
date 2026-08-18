@@ -15,6 +15,7 @@ import {
   InvalidBookingTokenError,
   verifyBookingIdToken,
 } from "../src/lib/bookingService.ts";
+import { OFFICIAL_SUPERADMIN_UID } from "../src/lib/adminIdentity.ts";
 import {
   createFirestoreAvailabilityStore,
   handlePublicAvailabilityRequest,
@@ -44,6 +45,8 @@ const page = (overrides = {}) => ({
   slug: "salao-a",
   title: "Salão A",
   bio: "A",
+  plan: "pro",
+  trialDeadline: null,
   isOpen: true,
   links: [SERVICE],
   schedule: { open: "00:00", close: "23:59" },
@@ -56,7 +59,24 @@ const seedPages = async () => {
     db.collection("pages").doc("salao-b").set(page({
       userId: "owner-b", slug: "salao-b", title: "Salão B",
     })),
+    db.collection("users").doc("owner-a").set({
+      role: "owner", pageSlug: "salao-a", plan: "pro", trialDeadline: null,
+    }),
+    db.collection("users").doc("owner-b").set({
+      role: "owner", pageSlug: "salao-b", plan: "pro", trialDeadline: null,
+    }),
   ]);
+};
+
+const seedBilling = async (ownerId, overrides = {}) => {
+  await db.collection("billing").doc(ownerId).set({
+    ownerId,
+    pageSlug: ownerId === "owner-b" ? "salao-b" : "salao-a",
+    status: "active",
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  });
 };
 
 const body = (overrides = {}) => ({
@@ -117,6 +137,10 @@ const seedLegacy = async ({
 const list = async (collection) => (await db.collection(collection).get()).docs;
 const blockingAppointments = async () =>
   (await list("appointments")).filter((snapshot) => snapshot.data().status !== "cancelled");
+const assertNoBookingWrites = async () => {
+  assert.equal((await list("appointments")).length, 0);
+  assert.equal((await list("bookingLocks")).length, 0);
+};
 
 before(async () => {
   app = initializeApp({ projectId: PROJECT_ID }, `booking-tests-${Date.now()}`);
@@ -145,6 +169,118 @@ test("primeiro booking livre cria appointment pending e locks atômicos", async 
   const locks = await list("bookingLocks");
   assert.equal(locks.length, 2);
   assert.equal(locks.every((lock) => lock.data().appointmentId === result.payload.appointmentId), true);
+});
+
+test("Stripe ACTIVE permite novo booking", async () => {
+  await seedBilling("owner-a");
+  const result = await book(body({ idempotencyKey: "commercial-active-01" }));
+  assert.equal(result.response.status, 201);
+  assert.equal((await list("appointments")).length, 1);
+  assert.equal((await list("bookingLocks")).length, 2);
+});
+
+test("promotional trial ativo permite novo booking", async () => {
+  const deadline = new Date(NOW.getTime() + 24 * 60 * 60 * 1_000);
+  await Promise.all([
+    db.collection("users").doc("owner-a").update({ trialDeadline: deadline }),
+    db.collection("pages").doc("salao-a").update({ trialDeadline: deadline }),
+  ]);
+  assert.equal((await book(body({ idempotencyKey: "commercial-trial-01" }))).response.status, 201);
+});
+
+test("past_due dentro da grace permite novo booking", async () => {
+  await seedBilling("owner-a", {
+    status: "past_due",
+    pastDueSince: new Date(NOW.getTime() - 24 * 60 * 60 * 1_000),
+  });
+  assert.equal((await book(body({ idempotencyKey: "commercial-grace-01" }))).response.status, 201);
+});
+
+test("BLOCKED nega booking com resposta genérica e zero writes", async () => {
+  await Promise.all([
+    db.collection("users").doc("owner-a").update({ plan: "free" }),
+    db.collection("pages").doc("salao-a").update({ plan: "free" }),
+  ]);
+  const result = await book(body({ idempotencyKey: "commercial-blocked-01" }));
+  assert.equal(result.response.status, 403);
+  assert.deepEqual(result.payload, {
+    error: {
+      code: "COMMERCIAL_BOOKING_BLOCKED",
+      message: "Novos agendamentos estão indisponíveis para este estabelecimento.",
+    },
+  });
+  await assertNoBookingWrites();
+});
+
+test("past_due fora da grace nega booking com zero writes", async () => {
+  await seedBilling("owner-a", {
+    status: "past_due",
+    pastDueSince: new Date(NOW.getTime() - 4 * 24 * 60 * 60 * 1_000),
+  });
+  await Promise.all([
+    db.collection("users").doc("owner-a").update({ plan: "free" }),
+    db.collection("pages").doc("salao-a").update({ plan: "free" }),
+  ]);
+  const result = await book(body({ idempotencyKey: "commercial-expired-01" }));
+  assert.equal(result.response.status, 403);
+  assert.equal(result.payload.error.code, "COMMERCIAL_BOOKING_BLOCKED");
+  await assertNoBookingWrites();
+});
+
+test("binding owner/page inconsistente falha fechado com zero writes", async () => {
+  await db.collection("users").doc("owner-a").update({ pageSlug: "salao-b" });
+  const result = await book(body({ idempotencyKey: "binding-mismatch-0001" }));
+  assert.equal(result.response.status, 503);
+  await assertNoBookingWrites();
+});
+
+test("billing cross-tenant falha fechado com zero writes", async () => {
+  await seedBilling("owner-a", { pageSlug: "salao-b" });
+  const result = await book(body({ idempotencyKey: "billing-cross-tenant" }));
+  assert.equal(result.response.status, 503);
+  await assertNoBookingWrites();
+});
+
+test("ADMIN_BYPASS não autoriza booking público e não escreve", async () => {
+  await Promise.all([
+    db.collection("pages").doc("salao-a").update({ userId: OFFICIAL_SUPERADMIN_UID }),
+    db.collection("users").doc(OFFICIAL_SUPERADMIN_UID).set({ pageSlug: "salao-a" }),
+  ]);
+  const result = await book(body({ idempotencyKey: "admin-bypass-booking" }));
+  assert.equal(result.response.status, 403);
+  assert.equal(result.payload.error.code, "COMMERCIAL_BOOKING_BLOCKED");
+  await assertNoBookingWrites();
+});
+test("estado comercial fora da whitelist falha fechado sem writes", async () => {
+  const response = await handleBookingRequest(request(body({
+    idempotencyKey: "unknown-commercial-state",
+  })), {
+    verifyIdToken: async () => ({ uid: "customer-a" }),
+    store: createFirestoreBookingStore(db),
+    resolveCommercialEntitlement: () => ({ state: "FUTURE_STATE" }),
+    now: () => NOW,
+  });
+  const payload = await responseBody(response);
+  assert.equal(response.status, 403);
+  assert.equal(payload.error.code, "COMMERCIAL_BOOKING_BLOCKED");
+  await assertNoBookingWrites();
+});
+
+
+test("retry idempotente permanece ALREADY_BOOKED após tenant virar BLOCKED", async () => {
+  const first = await book(body({ idempotencyKey: "blocked-retry-existing" }));
+  await Promise.all([
+    db.collection("users").doc("owner-a").update({ plan: "free" }),
+    db.collection("pages").doc("salao-a").update({ plan: "free" }),
+  ]);
+  const appointmentsBefore = (await list("appointments")).length;
+  const locksBefore = (await list("bookingLocks")).length;
+  const retry = await book(body({ idempotencyKey: "blocked-retry-existing" }));
+  assert.equal(first.response.status, 201);
+  assert.equal(retry.response.status, 200);
+  assert.equal(retry.payload.status, "ALREADY_BOOKED");
+  assert.equal((await list("appointments")).length, appointmentsBefore);
+  assert.equal((await list("bookingLocks")).length, locksBefore);
 });
 
 test("duas requisições concorrentes para o mesmo slot produzem um vencedor real", async () => {
@@ -374,7 +510,14 @@ test("classificação de token distingue credencial de infraestrutura", async ()
   );
 });
 
-for (const forbidden of ["customerId", "status", "createdAt", "endAt", "totalValue", "durationMinutes"]) {
+for (const forbidden of [
+  "customerId", "status", "createdAt", "endAt", "totalValue", "durationMinutes",
+  "ownerId",
+  "plan",
+  "trialDeadline",
+  "billingStatus",
+  "entitlement",
+]) {
   test(`campo controlado pelo cliente é rejeitado: ${forbidden}`, async () => {
     const result = await book(body({ [forbidden]: forbidden === "totalValue" ? 1 : "forged" }));
     assert.equal(result.response.status, 400);

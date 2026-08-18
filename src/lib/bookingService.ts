@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 
 import type { DocumentData, Firestore } from "firebase-admin/firestore";
 
+import { normalizeBillingRecord } from "./billingServiceCore.ts";
+import type { BillingRecord } from "./billingTypes.ts";
+import { resolveCommercialEntitlementForAccounts } from "./commercialAccessService.ts";
+
 export const BOOKING_LOCK_MINUTES = 30;
 export const MAX_BOOKING_BODY_BYTES = 8_192;
 export const MAX_BOOKING_SERVICES = 20;
@@ -33,12 +37,18 @@ const CREDENTIAL_ARGUMENT_ERROR_PREFIXES = [
   "Firebase ID token has invalid signature.",
   'Firebase ID token has "kid" claim which does not correspond to a known public key.',
 ];
+const ALLOWED_BOOKING_COMMERCIAL_STATES = new Set([
+  "ACTIVE",
+  "TRIAL_ACTIVE",
+  "PAST_DUE_GRACE",
+]);
 
 type BookingErrorCode =
   | "INVALID_REQUEST"
   | "UNAUTHORIZED"
   | "SLOT_UNAVAILABLE"
   | "IDEMPOTENCY_CONFLICT"
+  | "COMMERCIAL_BOOKING_BLOCKED"
   | "BOOKING_UNAVAILABLE";
 
 export class BookingError extends Error {
@@ -90,6 +100,8 @@ export type BookingLockSnapshot = {
 
 export type BookingTransaction = {
   getPage(pageSlug: string): Promise<DocumentData | null>;
+  getUser(ownerId: string): Promise<DocumentData | null>;
+  getBilling(ownerId: string): Promise<BillingRecord | null>;
   getAppointment(appointmentId: string): Promise<DocumentData | null>;
   getLocks(lockIds: string[]): Promise<BookingLockSnapshot[]>;
   getAppointments(appointmentIds: string[]): Promise<Map<string, DocumentData | null>>;
@@ -97,6 +109,14 @@ export type BookingTransaction = {
   createAppointment(appointmentId: string, data: DocumentData): void;
   setLock(lockId: string, data: DocumentData): void;
 };
+type BookingCommercialResolver = (
+  ownerId: string,
+  user: DocumentData,
+  page: DocumentData,
+  billing: BillingRecord | null,
+  now: Date,
+) => Readonly<{ state: string }>;
+
 
 export type BookingStore = {
   runTransaction<T>(operation: (transaction: BookingTransaction) => Promise<T>): Promise<T>;
@@ -105,6 +125,7 @@ export type BookingStore = {
 export type BookingDependencies = {
   verifyIdToken(token: string): Promise<BookingIdentity>;
   store: BookingStore;
+  resolveCommercialEntitlement?: BookingCommercialResolver;
   now?: () => Date;
 };
 
@@ -378,12 +399,23 @@ const performBooking = async (
   input: ParsedBookingInput,
   transaction: BookingTransaction,
   now: Date,
+  resolveEntitlement: BookingCommercialResolver,
 ): Promise<BookingResult> => {
   const page = await transaction.getPage(input.pageSlug);
   if (!page) return invalidRequest("Página inválida.");
-  const resolved = resolveBookingServices(page, input.services);
-  const endAt = new Date(input.startDate.getTime() + resolved.totalDuration * 60 * 1_000);
-  validateBookingTime(page, input.startDate, endAt, now);
+
+  const ownerId = page.userId;
+  if (
+    page.slug !== input.pageSlug ||
+    typeof ownerId !== "string" ||
+    ownerId.length === 0
+  ) {
+    throw new BookingError(503, "BOOKING_UNAVAILABLE", "Agendamento temporariamente indisponível.");
+  }
+  const user = await transaction.getUser(ownerId);
+  if (!user || user.pageSlug !== input.pageSlug) {
+    throw new BookingError(503, "BOOKING_UNAVAILABLE", "Agendamento temporariamente indisponível.");
+  }
 
   const appointmentId = bookingAppointmentId(identity.uid, input.idempotencyKey);
   const fingerprint = bookingFingerprint(identity.uid, input);
@@ -397,6 +429,23 @@ const performBooking = async (
     }
     return resultFromAppointment(appointmentId, existingAppointment);
   }
+
+  const billing = await transaction.getBilling(ownerId);
+  if (billing && (billing.ownerId !== ownerId || billing.pageSlug !== input.pageSlug)) {
+    throw new BookingError(503, "BOOKING_UNAVAILABLE", "Agendamento temporariamente indisponível.");
+  }
+  const entitlement = resolveEntitlement(ownerId, user, page, billing, now);
+  if (!ALLOWED_BOOKING_COMMERCIAL_STATES.has(entitlement.state)) {
+    throw new BookingError(
+      403,
+      "COMMERCIAL_BOOKING_BLOCKED",
+      "Novos agendamentos estão indisponíveis para este estabelecimento.",
+    );
+  }
+
+  const resolved = resolveBookingServices(page, input.services);
+  const endAt = new Date(input.startDate.getTime() + resolved.totalDuration * 60 * 1_000);
+  validateBookingTime(page, input.startDate, endAt, now);
 
   const lockIds = bookingLockIds(input.pageSlug, input.startDate, endAt);
   const locks = await transaction.getLocks(lockIds);
@@ -500,7 +549,13 @@ export const handleBookingRequest = async (
     const input = parseBookingInput(await readBody(request));
     const now = new Date((dependencies.now ?? (() => new Date()))().getTime());
     const result = await dependencies.store.runTransaction((transaction) =>
-      performBooking(identity, input, transaction, now),
+      performBooking(
+        identity,
+        input,
+        transaction,
+        now,
+        dependencies.resolveCommercialEntitlement ?? resolveCommercialEntitlementForAccounts,
+      ),
     );
     return publicResponse(result, result.status === "BOOKED" ? 201 : 200);
   } catch (error) {
@@ -525,6 +580,14 @@ export const createFirestoreBookingStore = (
         async getPage(pageSlug) {
           const snapshot = await firestoreTransaction.get(db.collection("pages").doc(pageSlug));
           return snapshot.exists ? snapshot.data()! : null;
+        },
+        async getUser(ownerId) {
+          const snapshot = await firestoreTransaction.get(db.collection("users").doc(ownerId));
+          return snapshot.exists ? snapshot.data()! : null;
+        },
+        async getBilling(ownerId) {
+          const snapshot = await firestoreTransaction.get(db.collection("billing").doc(ownerId));
+          return snapshot.exists ? normalizeBillingRecord(ownerId, snapshot.data()!) : null;
         },
         async getAppointment(appointmentId) {
           const snapshot = await firestoreTransaction.get(db.collection("appointments").doc(appointmentId));
