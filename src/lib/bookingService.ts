@@ -5,6 +5,7 @@ import type { DocumentData, Firestore } from "firebase-admin/firestore";
 import { normalizeBillingRecord } from "./billingServiceCore.ts";
 import type { BillingRecord } from "./billingTypes.ts";
 import { resolveCommercialEntitlementForAccounts } from "./commercialAccessService.ts";
+import { evaluateCommercialScheduleRange, resolveBusinessTimeZone } from "./timezone.ts";
 
 export const BOOKING_LOCK_MINUTES = 30;
 export const MAX_BOOKING_BODY_BYTES = 8_192;
@@ -302,11 +303,35 @@ export const validateBookingTime = (
   if (startAt <= now || endAt <= startAt) {
     throw new BookingError(409, "SLOT_UNAVAILABLE", "Horário indisponível.");
   }
-  if (startAt.getSeconds() !== 0 || startAt.getMilliseconds() !== 0 || startAt.getMinutes() % 30 !== 0) {
+  const timeZone = resolveBusinessTimeZone(page.timezone);
+  const schedule = isPlainObject(page.schedule) ? page.schedule : {};
+  const open = parseTime(schedule.open, "09:00");
+  const close = parseTime(schedule.close, "19:00");
+  let lunchStart: number | null = null;
+  let lunchEnd: number | null = null;
+  if (schedule.lunchStart !== undefined || schedule.lunchEnd !== undefined) {
+    if (schedule.lunchStart === undefined || schedule.lunchEnd === undefined) {
+      throw new BookingError(503, "BOOKING_UNAVAILABLE", "Agenda temporariamente indisponível.");
+    }
+    lunchStart = parseTime(schedule.lunchStart, "00:00");
+    lunchEnd = parseTime(schedule.lunchEnd, "00:00");
+    if (lunchStart >= lunchEnd) {
+      throw new BookingError(503, "BOOKING_UNAVAILABLE", "Agenda temporariamente indisponível.");
+    }
+  }
+  const scheduleRange = evaluateCommercialScheduleRange({
+    startAt,
+    endAt,
+    timeZone,
+    openMinutes: open,
+    closeMinutes: close,
+    lunchStartMinutes: lunchStart,
+    lunchEndMinutes: lunchEnd,
+  });
+  const { localStart } = scheduleRange;
+  if (localStart.second !== 0 || startAt.getMilliseconds() !== 0 || localStart.minute % 30 !== 0) {
     invalidRequest("startAt fora da grade suportada.");
   }
-
-  const schedule = isPlainObject(page.schedule) ? page.schedule : {};
   const workingDays = schedule.workingDays;
   if (
     workingDays !== undefined &&
@@ -315,30 +340,12 @@ export const validateBookingTime = (
   ) {
     throw new BookingError(503, "BOOKING_UNAVAILABLE", "Agenda temporariamente indisponível.");
   }
-  if (Array.isArray(workingDays) && !workingDays.includes(startAt.getDay())) {
+  if (Array.isArray(workingDays) && !workingDays.includes(localStart.weekday)) {
     throw new BookingError(409, "SLOT_UNAVAILABLE", "Horário indisponível.");
   }
 
-  const open = parseTime(schedule.open, "09:00");
-  const close = parseTime(schedule.close, "19:00");
-  const startMinutes = startAt.getHours() * 60 + startAt.getMinutes();
-  const endMinutes = endAt.getHours() * 60 + endAt.getMinutes();
-  if (open >= close || startAt.toDateString() !== endAt.toDateString() || startMinutes < open || endMinutes > close) {
+  if (!scheduleRange.withinSchedule || scheduleRange.overlapsLunch) {
     throw new BookingError(409, "SLOT_UNAVAILABLE", "Horário indisponível.");
-  }
-
-  if (schedule.lunchStart !== undefined || schedule.lunchEnd !== undefined) {
-    if (schedule.lunchStart === undefined || schedule.lunchEnd === undefined) {
-      throw new BookingError(503, "BOOKING_UNAVAILABLE", "Agenda temporariamente indisponível.");
-    }
-    const lunchStart = parseTime(schedule.lunchStart, "00:00");
-    const lunchEnd = parseTime(schedule.lunchEnd, "00:00");
-    if (lunchStart >= lunchEnd) {
-      throw new BookingError(503, "BOOKING_UNAVAILABLE", "Agenda temporariamente indisponível.");
-    }
-    if (startMinutes < lunchEnd && endMinutes > lunchStart) {
-      throw new BookingError(409, "SLOT_UNAVAILABLE", "Horário indisponível.");
-    }
   }
 };
 

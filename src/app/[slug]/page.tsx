@@ -11,6 +11,17 @@ import {
 import { generateAvailableSlots } from '@/lib/availability';
 import { fetchPublicAvailability } from '@/lib/publicAvailability';
 import { bookAppointment, BookAppointmentRequestError } from '@/lib/bookingClient';
+import {
+  addDaysToLocalDate,
+  bookingStartAtIso,
+  formatBusinessDateTime,
+  formatLocalDate,
+  getZonedDateTimeParts,
+  LEGACY_BUSINESS_TIME_ZONE,
+  localAvailabilityRangeIso,
+  resolveBusinessTimeZone,
+  weekdayForLocalDate,
+} from '@/lib/timezone';
 import Link from 'next/link';
 import Image from 'next/image';
 import { 
@@ -57,16 +68,16 @@ function NotFoundState() {
     );
 }
 
-const getNextDays = (days: number) => {
+const getNextDays = (days: number, timeZone: string, now = new Date()) => {
     const dates = [];
-    const today = new Date();
+    const today = getZonedDateTimeParts(now, timeZone).date;
     for (let i = 0; i < days; i++) {
-        const d = new Date(today);
-        d.setDate(today.getDate() + i);
+        const fullDate = addDaysToLocalDate(today, i);
+        const calendarDate = new Date(fullDate + 'T00:00:00.000Z');
         dates.push({
-            fullDate: d.toISOString().split('T')[0],
-            dayName: i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.','').slice(0,3),
-            dayNumber: d.getDate()
+            fullDate,
+            dayName: i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : calendarDate.toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'UTC' }).replace('.','').slice(0,3),
+            dayNumber: Number(fullDate.slice(8, 10))
         });
     }
     return dates;
@@ -77,12 +88,13 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
   const { user } = useAuth();
   
   const [pageData, setPageData] = useState<ExtendedPageData | null>(null);
+  const businessTimeZone = resolveBusinessTimeZone(pageData?.timezone);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [cart, setCart] = useState<LinkData[]>([]); 
   const [isSelectorOpen, setIsSelectorOpen] = useState(false); 
-  const nextDays = getNextDays(14);
-  const [selectedDate, setSelectedDate] = useState<string>(nextDays[0].fullDate); 
+  const nextDays = getNextDays(14, businessTimeZone);
+  const [selectedDate, setSelectedDate] = useState<string>(() => getNextDays(14, LEGACY_BUSINESS_TIME_ZONE)[0].fullDate);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [availabilityError, setAvailabilityError] = useState(false);
@@ -113,6 +125,8 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
         if (!data) setError(true); 
         else {
             setPageData(data);
+            const pageTimeZone = resolveBusinessTimeZone(data.timezone);
+            setSelectedDate(getNextDays(14, pageTimeZone)[0].fullDate);
             const theme = data.theme || 'light';
             document.documentElement.className = "";
             document.documentElement.classList.add(`theme-${theme}`);
@@ -128,11 +142,11 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
     const fetchSlots = async () => {
         setLoadingSlots(true);
         setAvailabilityError(false);
-        const dateStr = `${selectedDate}T00:00:00`; 
-        const startOfDay = new Date(dateStr);
-        const endOfDay = new Date(dateStr);
-        endOfDay.setHours(23, 59, 59, 999); 
-        const dayOfWeek = startOfDay.getDay();
+        const { startAt: startOfDay, endAt: endOfDay } = localAvailabilityRangeIso(
+            selectedDate,
+            businessTimeZone,
+        );
+        const dayOfWeek = weekdayForLocalDate(selectedDate);
         if (pageData.schedule?.workingDays && !pageData.schedule.workingDays.includes(dayOfWeek)) {
              setAvailableSlots([]);
              setLoadingSlots(false);
@@ -142,12 +156,12 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
             const busyIntervals = await fetchPublicAvailability(
                 {
                     pageSlug: resolvedParams.slug,
-                    startAt: startOfDay.toISOString(),
-                    endAt: endOfDay.toISOString(),
+                    startAt: startOfDay,
+                    endAt: endOfDay,
                 },
                 abortController.signal,
             );
-            const slots = generateAvailableSlots(startOfDay, totalDuration, busyIntervals, pageData.schedule);
+            const slots = generateAvailableSlots(selectedDate, totalDuration, busyIntervals, pageData.schedule, businessTimeZone);
             setAvailableSlots(slots);
         } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') return;
@@ -159,7 +173,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
     };
     fetchSlots();
     return () => abortController.abort();
-  }, [selectedDate, totalDuration, pageData, resolvedParams.slug, isSelectorOpen, availabilityRefreshKey]);
+  }, [selectedDate, totalDuration, pageData, businessTimeZone, resolvedParams.slug, isSelectorOpen, availabilityRefreshKey]);
 
   const toggleCartItem = (item: LinkData) => {
       const exists = cart.find(i => i.title === item.title);
@@ -205,15 +219,13 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
       if (!customerName || !selectedTime || cart.length === 0 || !pageData || !user) return;
       setIsBooking(true);
       try {
-          const [hours, minutes] = selectedTime.split(':').map(Number);
-          const startDate = new Date(`${selectedDate}T00:00:00`);
-          startDate.setHours(hours, minutes, 0, 0);
+          const startAt = bookingStartAtIso(selectedDate, selectedTime, businessTimeZone);
           const idempotencyKey = bookingIdempotencyKey.current || crypto.randomUUID();
           bookingIdempotencyKey.current = idempotencyKey;
           const result = await bookAppointment(
               {
                   pageSlug: resolvedParams.slug,
-                  startAt: startDate.toISOString(),
+                  startAt,
                   services: cart.map(i => i.title),
                   customerName,
                   customerPhone,
@@ -223,8 +235,8 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
           );
 
           const phone = pageData.whatsapp?.replace(/\D/g, '') || '';
-          const confirmedStart = new Date(result.startAt);
-          let msg = `*NOVO AGENDAMENTO 💅*\n\n👤 *Cliente:* ${customerName}\n📅 *Data:* ${confirmedStart.toLocaleDateString('pt-BR')} às *${selectedTime}*\n✨ *Serviços:* ${result.serviceName}\n💰 *Total:* R$ ${result.totalValue.toFixed(2)}`;
+          const confirmedStart = formatBusinessDateTime(new Date(result.startAt), businessTimeZone);
+          let msg = `*NOVO AGENDAMENTO 💅*\n\n👤 *Cliente:* ${customerName}\n📅 *Data:* ${confirmedStart.date} às *${confirmedStart.time}*\n✨ *Serviços:* ${result.serviceName}\n💰 *Total:* R$ ${result.totalValue.toFixed(2)}`;
           window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
           
           bookingIdempotencyKey.current = null;
@@ -343,8 +355,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                         
                         <div className="flex gap-3 overflow-x-auto pb-6 scrollbar-hide -mx-2 px-2 snap-x">
                             {nextDays.map((day) => {
-                                const dayDate = new Date(`${day.fullDate}T00:00:00`);
-                                const dayOfWeek = dayDate.getDay();
+                                const dayOfWeek = weekdayForLocalDate(day.fullDate);
                                 const isOpenDay = pageData.schedule?.workingDays ? pageData.schedule.workingDays.includes(dayOfWeek) : true;
                                 const isSelected = day.fullDate === selectedDate;
                                 return (
@@ -409,7 +420,7 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                         </div>
 
                         <div className="bg-purple-50/50 p-6 rounded-[2.2rem] border border-purple-100 space-y-5">
-                             <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-purple-400"><span>{new Date(selectedDate).toLocaleDateString('pt-BR')}</span><span>{selectedTime}</span></div>
+                             <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-purple-400"><span>{formatLocalDate(selectedDate)}</span><span>{selectedTime}</span></div>
                              <p className="text-gray-900 font-bold text-sm leading-relaxed">{cart.map(i => i.title).join(' + ')}</p>
                              <div className="flex justify-between items-center pt-4 border-t border-purple-100"><span className="text-gray-400 text-[10px] font-black uppercase tracking-widest">Investimento</span><span className="text-3xl font-black text-purple-600 tracking-tighter">R$ {totalPrice.toFixed(2)}</span></div>
                         </div>
@@ -460,12 +471,13 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
                      <div className="p-8 overflow-y-auto flex-1 space-y-4 bg-[#fdfaf9]">
                          {loadingHistory ? <div className="text-center py-20 text-purple-200 animate-pulse uppercase text-[10px] tracking-widest">Buscando...</div> : historyApps.map(app => {
                                  let start; try { start = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any); } catch { start = new Date(); }
+                                 const displayedStart = formatBusinessDateTime(start, businessTimeZone);
                                  const statusMap = { pending: { label: 'Pendente', color: 'text-amber-500 bg-amber-50' }, confirmed: { label: 'Confirmado', color: 'text-blue-500 bg-blue-50' }, completed: { label: 'Realizado', color: 'text-purple-600 bg-purple-50' }, cancelled: { label: 'Cancelado', color: 'text-red-400 bg-red-50' } };
                                  const st = statusMap[app.status || 'pending'];
                                  return (
                                      <div key={app.id} className="p-6 rounded-[2rem] bg-white border border-purple-50 shadow-sm">
                                          <div className="flex justify-between items-start mb-2">
-                                             <div><span className="font-black text-gray-900 block tracking-tighter">{start.toLocaleDateString('pt-BR')}</span><span className="text-[10px] font-bold text-gray-400">{start.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</span></div>
+                                             <div><span className="font-black text-gray-900 block tracking-tighter">{displayedStart.date}</span><span className="text-[10px] font-bold text-gray-400">{displayedStart.time}</span></div>
                                              <span className={`text-[8px] uppercase font-black px-3 py-1.5 rounded-full border ${st.color}`}>{st.label}</span>
                                          </div>
                                          <p className="text-gray-500 text-[11px] font-medium">{app.serviceName}</p>

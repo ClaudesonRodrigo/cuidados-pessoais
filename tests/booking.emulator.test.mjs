@@ -48,6 +48,7 @@ const page = (overrides = {}) => ({
   plan: "pro",
   trialDeadline: null,
   isOpen: true,
+  timezone: "UTC",
   links: [SERVICE],
   schedule: { open: "00:00", close: "23:59" },
   ...overrides,
@@ -102,11 +103,12 @@ const book = async (
   payload = body(),
   uid = "customer-a",
   store = createFirestoreBookingStore(db),
+  currentNow = NOW,
 ) => {
   const response = await handleBookingRequest(request(payload), {
     verifyIdToken: async () => ({ uid, email: `${uid}@example.com` }),
     store,
-    now: () => NOW,
+    now: () => currentNow,
   });
   return { response, payload: await responseBody(response) };
 };
@@ -169,6 +171,30 @@ test("primeiro booking livre cria appointment pending e locks atômicos", async 
   const locks = await list("bookingLocks");
   assert.equal(locks.length, 2);
   assert.equal(locks.every((lock) => lock.data().appointmentId === result.payload.appointmentId), true);
+});
+
+test("22/08/2026 16:00 Bahia não falha quando o runtime conceitual é UTC", async () => {
+  await db.collection("pages").doc("salao-a").update({
+    timezone: "America/Bahia",
+    schedule: { open: "09:00", close: "19:00", workingDays: [6] },
+    links: [{ ...SERVICE, durationMinutes: 30 }],
+  });
+  const result = await book(
+    body({
+      startAt: "2026-08-22T19:00:00.000Z",
+      idempotencyKey: "manual-timezone-1600",
+    }),
+    "customer-a",
+    createFirestoreBookingStore(db),
+    new Date("2026-08-21T12:00:00.000Z"),
+  );
+  assert.equal(result.response.status, 201);
+  assert.equal(result.payload.startAt, "2026-08-22T19:00:00.000Z");
+  const appointment = (
+    await db.collection("appointments").doc(result.payload.appointmentId).get()
+  ).data();
+  assert.equal(appointment.startAt.toDate().toISOString(), "2026-08-22T19:00:00.000Z");
+  assert.equal(appointment.endAt.toDate().toISOString(), "2026-08-22T19:30:00.000Z");
 });
 
 test("Stripe ACTIVE permite novo booking", async () => {

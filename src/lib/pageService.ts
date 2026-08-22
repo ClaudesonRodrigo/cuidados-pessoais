@@ -55,6 +55,7 @@ export type PageData = {
   plan?: string;
   trialDeadline?: Timestamp;
   isOpen?: boolean;
+  timezone?: string;
   schedule?: ScheduleData;
   createdAt?: any;
 };

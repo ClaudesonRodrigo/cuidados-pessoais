@@ -1,4 +1,5 @@
-export const MAX_AVAILABILITY_RANGE_MS = 24 * 60 * 60 * 1000;
+// Um único dia civil IANA pode durar 23h, 24h ou 25h; 26h mantém folga restrita.
+export const MAX_AVAILABILITY_RANGE_MS = 26 * 60 * 60 * 1000;
 export const MAX_AVAILABILITY_RESULTS = 200;
 export const MAX_AVAILABILITY_BODY_BYTES = 2_048;
 

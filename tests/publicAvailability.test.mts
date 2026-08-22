@@ -6,12 +6,14 @@ import {
   createFirestoreAvailabilityStore,
   fetchPublicAvailability,
   handlePublicAvailabilityRequest,
+  MAX_AVAILABILITY_RANGE_MS,
   MAX_AVAILABILITY_RESULTS,
   PublicAvailabilityRequestError,
   type AvailabilityDocument,
   type AvailabilityFirestore,
   type AvailabilityStore,
 } from "../src/lib/publicAvailability.ts";
+import { localAvailabilityRangeIso } from "../src/lib/timezone.ts";
 
 const START = "2099-01-05T12:00:00.000Z";
 const END = "2099-01-06T11:59:59.999Z";
@@ -311,9 +313,25 @@ test("rejeita endAt igual ou anterior a startAt", async () => {
   assert.equal(response.status, 400);
 });
 
-test("rejeita período superior a 24 horas", async () => {
+for (const [label, range] of [
+  ["24h normal", localAvailabilityRangeIso("2026-08-22", "America/Bahia")],
+  ["23h spring-forward", localAvailabilityRangeIso("2026-03-08", "America/New_York")],
+  ["25h fall-back", localAvailabilityRangeIso("2026-11-01", "America/New_York")],
+] as const) {
+  test(`aceita janela de um dia civil: ${label}`, async () => {
+    const response = await handlePublicAvailabilityRequest(
+      request(input(range)),
+      store(),
+    );
+    assert.equal(response.status, 200);
+  });
+}
+
+test("rejeita período acima do limite explícito de 26 horas", async () => {
+  const startAt = new Date("2099-01-05T00:00:00.000Z");
+  const endAt = new Date(startAt.getTime() + MAX_AVAILABILITY_RANGE_MS + 1);
   const response = await handlePublicAvailabilityRequest(
-    request(input({ endAt: "2099-01-06T12:00:00.001Z" })),
+    request(input({ startAt: startAt.toISOString(), endAt: endAt.toISOString() })),
     store(),
   );
   assert.equal(response.status, 400);
@@ -405,7 +423,9 @@ test("página pública não importa nem chama a consulta Firestore direta", asyn
   const source = await readFile("src/app/[slug]/page.tsx", "utf8");
   assert.equal(source.includes("getAppointmentsByDate"), false);
   assert.equal(source.includes("fetchPublicAvailability"), true);
-  assert.equal(source.includes("generateAvailableSlots(startOfDay, totalDuration, busyIntervals"), true);
+  assert.equal(source.includes("generateAvailableSlots(selectedDate, totalDuration, busyIntervals"), true);
+  assert.equal(source.includes("bookingStartAtIso(selectedDate, selectedTime, businessTimeZone)"), true);
+  assert.equal(source.includes("localAvailabilityRangeIso("), true);
   assert.equal(source.includes("Agenda temporariamente indisponível"), true);
   assert.equal(source.includes("setAvailableSlots([])"), true);
   assert.equal(source.includes("setAvailabilityError(true)"), true);
