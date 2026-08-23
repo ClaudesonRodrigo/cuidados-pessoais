@@ -102,3 +102,23 @@ test("backend e Rules de loyalty permanecem preservados", async () => {
   assert.equal(service.includes("addLoyaltyPoint"), true);
   assert.equal(rules.includes("match /loyalty/{loyaltyId}"), true);
 });
+
+test("card público preserva o fluxo comercial e expande serviços selecionados", async () => {
+  const source = await readFile("src/app/[slug]/page.tsx", "utf8");
+
+  for (const expected of [
+    "const serviceDescription = item.description?.trim()",
+    "isInCart ? 'flex-col gap-4",
+    "isInCart ? 'w-full h-44 sm:h-52",
+    ": 'w-20 h-20 rounded-2xl",
+    "isInCart && serviceDescription",
+    "{item.price &&",
+    "{item.durationMinutes || 30} MIN",
+    ">Valor Total</p>",
+    "onClick={handleProceedToDate}",
+  ]) {
+    assert.equal(source.includes(expected), true, expected);
+  }
+  assert.equal(source.includes("setCart(cart.filter(i => i.title !== item.title))"), true);
+  assert.equal(source.includes("setCart([...cart, item])"), true);
+});

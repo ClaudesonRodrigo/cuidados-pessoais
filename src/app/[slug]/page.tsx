@@ -316,24 +316,29 @@ export default function SchedulingPage({ params }: { params: Promise<{ slug: str
             <div className="space-y-4">
                 {pageData.links?.map((item, index) => {
                     const isInCart = cart.some(i => i.title === item.title);
+                    const serviceDescription = item.description?.trim();
                     return (
                         <motion.div 
                             key={index} 
+                            layout
                             initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} transition={{delay: index*0.05}}
                             onClick={() => !isClosed && toggleCartItem(item)}
-                            className={`group relative overflow-hidden rounded-[2.2rem] border p-5 flex gap-5 cursor-pointer transition-all duration-500 ${isInCart ? 'bg-white border-purple-200 shadow-[0_20px_40px_rgba(139,92,246,0.12)] scale-[1.03]' : 'bg-white border-purple-50/50 hover:border-purple-200 shadow-sm'}`}
+                            className={`group relative overflow-hidden rounded-[2.2rem] border p-5 flex cursor-pointer transition-all duration-500 ${isInCart ? 'flex-col gap-4 bg-white border-purple-200 shadow-[0_20px_40px_rgba(139,92,246,0.12)] sm:scale-[1.02]' : 'gap-5 bg-white border-purple-50/50 hover:border-purple-200 shadow-sm'}`}
                         >
                             <div className={`absolute top-5 right-6 transition-all duration-500 ${isInCart ? 'scale-110 opacity-100' : 'scale-0 opacity-0'}`}>
                                 <div className="bg-purple-600 p-1.5 rounded-full shadow-lg shadow-purple-200"><FaCheckCircle className="text-white text-xl"/></div>
                             </div>
 
-                            <div className="w-20 h-20 rounded-2xl bg-purple-50 relative overflow-hidden shrink-0 border border-purple-100/50 group-hover:scale-105 transition-transform duration-500">
-                                {item.imageUrl ? <Image src={item.imageUrl} alt={item.title} fill className="object-cover" sizes="80px" /> : <div className="flex items-center justify-center h-full text-purple-200 text-3xl"><FaGem/></div>}
+                            <div className={`${isInCart ? 'w-full h-44 sm:h-52 rounded-[1.8rem]' : 'w-20 h-20 rounded-2xl shrink-0 group-hover:scale-105'} bg-purple-50 relative overflow-hidden border border-purple-100/50 transition-all duration-500`}>
+                                {item.imageUrl ? <Image src={item.imageUrl} alt={item.title} fill className="object-cover" sizes={isInCart ? '(max-width: 640px) calc(100vw - 72px), 440px' : '80px'} /> : <div className={`flex items-center justify-center h-full text-purple-200 ${isInCart ? 'text-5xl' : 'text-3xl'}`}><FaGem/></div>}
                             </div>
                             
-                            <div className="flex-1 pr-8 py-1 flex flex-col justify-center">
-                                <h3 className={`font-bold text-[1.05rem] leading-snug mb-1.5 transition-colors ${isInCart ? 'text-gray-900' : 'text-gray-700 group-hover:text-purple-600'}`}>{item.title}</h3>
-                                <div className="flex items-center gap-4">
+                            <div className={`flex-1 py-1 flex flex-col justify-center ${isInCart ? 'w-full px-1' : 'pr-8'}`}>
+                                <h3 className={`font-bold leading-snug mb-1.5 transition-all ${isInCart ? 'text-xl text-gray-900' : 'text-[1.05rem] text-gray-700 group-hover:text-purple-600'}`}>{item.title}</h3>
+                                {isInCart && serviceDescription && (
+                                    <p className="text-sm leading-relaxed text-gray-500 mb-3 pr-2">{serviceDescription}</p>
+                                )}
+                                <div className={`flex items-center gap-4 ${isInCart ? 'mt-1 pt-4 border-t border-purple-50' : ''}`}>
                                     {item.price && <span className="text-purple-600 font-black text-sm tracking-tight">R$ {item.price}</span>}
                                     <div className="w-1 h-1 bg-purple-100 rounded-full"/>
                                     <span className="text-gray-300 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5"><FaClock size={10}/> {item.durationMinutes || 30} MIN</span>
