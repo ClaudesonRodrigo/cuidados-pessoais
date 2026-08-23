@@ -14,7 +14,7 @@ import {
 import { updateMasterPlan } from '@/lib/masterPlanClient';
 import { 
   FaUserCog, FaSave, FaQrcode, FaTag, FaTrashAlt,
-  FaMagic, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaToggleOn, FaToggleOff, FaStore, FaArrowLeft, FaCalendarDay, FaFileInvoiceDollar, FaArrowUp, FaArrowDown, FaGem, FaShieldAlt
+  FaMagic, FaPlus, FaCamera, FaCopy, FaExternalLinkAlt, FaLock, FaMapMarkerAlt, FaDoorOpen, FaDoorClosed, FaWhatsapp, FaKey, FaClock, FaSearch, FaCalendarAlt, FaCheck, FaTimes, FaList, FaMoneyBillWave, FaChartLine, FaWallet, FaHourglassHalf, FaCrown, FaArrowLeft, FaCalendarDay, FaFileInvoiceDollar, FaArrowUp, FaArrowDown, FaGem, FaShieldAlt
 } from 'react-icons/fa';
 import Image from 'next/image';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -50,6 +50,7 @@ import {
 import { createMasterTransaction, deleteMasterTransaction } from '@/lib/masterTransactionsClient';
 import { buildProfileSchedule, readLunchInterval } from '@/lib/adminProfileSchedule';
 import { formatBusinessDateTime } from '@/lib/timezone';
+import { MasterDashboard } from '@/components/master/MasterDashboard';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
@@ -495,16 +496,16 @@ export default function DashboardPage() {
          </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto py-8 px-4 space-y-8">
+      <main className={`${activeTab === 'master' ? 'max-w-[1440px] space-y-6' : 'max-w-4xl space-y-8'} mx-auto py-8 px-4`}>
 
-        <SubscriptionCard
+        {activeTab !== 'master' && <SubscriptionCard
           data={billingStatus.data}
           loading={billingStatus.loading}
           error={billingStatus.error}
           onSubscribe={() => setIsUpgradeModalOpen(true)}
-        />
+        />}
 
-        {isSuperAdmin && !pageSlug && (
+        {isSuperAdmin && !pageSlug && activeTab !== 'master' && (
           <div className="bg-amber-50 border border-amber-200 text-amber-900 p-5 rounded-2xl text-sm font-bold">
             {adminViewId
               ? 'A conta selecionada não possui uma página. Selecione outro tenant na aba Master.'
@@ -528,35 +529,18 @@ export default function DashboardPage() {
             ))}
         </div>
 
-        {activeTab === 'master' && isSuperAdmin && (
-            <div className="animate-beauty space-y-8">
-                <div className="bg-gray-900 p-10 rounded-[3rem] border border-purple-500/20 shadow-2xl relative overflow-hidden group">
-                    <div className="absolute -top-20 -left-20 w-64 h-64 bg-purple-600/10 rounded-full blur-[100px] pointer-events-none"/>
-                    <div className="relative z-10 space-y-4 mb-10">
-                        <h3 className="text-3xl font-bold text-white font-serif-luxury italic flex items-center gap-3"><FaShieldAlt className="text-purple-400"/> Central do Sábio</h3>
-                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-purple-300">Gestão Global do Ecossistema BeautyPro</p>
-                    </div>
-                    <div className="overflow-x-auto rounded-3xl border border-purple-900/20 bg-gray-900/50 backdrop-blur-sm">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-gray-800/50 text-gray-500 font-bold uppercase text-[9px] tracking-[0.2em]">
-                                <tr><th className="p-5">Salão</th><th className="p-5">Email</th><th className="p-5">Plano</th><th className="p-5 text-right">Ações</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-purple-900/10">
-                                {allUsers.map((u) => (
-                                    <tr key={u.uid} className="hover:bg-purple-900/10 transition-colors">
-                                        <td className="p-5"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-purple-900/50 flex items-center justify-center text-[10px] font-black text-purple-400 uppercase">{u.displayName?.charAt(0)}</div><span className="font-bold text-gray-200">{u.displayName || 'Sem Nome'}</span></div></td>
-                                        <td className="p-5 text-gray-400 font-medium">{u.email}</td>
-                                        <td className="p-5"><span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${u.plan === 'pro' ? 'bg-purple-600/20 text-purple-400 border-purple-600/30 shadow-lg' : 'bg-gray-800 text-gray-500 border-gray-700'}`}>{u.plan || 'FREE'}</span></td>
-                                        <td className="p-5 text-right flex gap-3 justify-end">
-                                            <button onClick={() => { setAdminViewId(u.uid); setActiveTab('agenda'); }} className="p-3 bg-purple-600 text-white rounded-xl shadow-lg hover:bg-purple-500 transition active:scale-95" title="Gerenciar"><FaStore size={14}/></button>
-                                            <button onClick={async () => { await updateMasterPlan(u.uid, u.plan === 'pro' ? 'free' : 'pro'); getAllUsers().then(setAllUsers); showToast("Plano alterado!"); }} className={`p-3 rounded-xl border transition-all active:scale-95 ${u.plan === 'pro' ? 'border-red-500/30 text-red-500 bg-red-500/10' : 'border-green-500/30 text-green-500 bg-green-500/10'}`}>{u.plan === 'pro' ? <FaToggleOff size={16}/> : <FaToggleOn size={16}/>}</button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+        {activeTab === 'master' && isSuperAdmin && user && (
+            <div className="animate-beauty">
+              <MasterDashboard
+                user={user}
+                tenants={allUsers}
+                onManageTenant={(uid) => { setAdminViewId(uid); setActiveTab('agenda'); }}
+                onTogglePlan={async (u) => {
+                  await updateMasterPlan(u.uid, u.plan === 'pro' ? 'free' : 'pro');
+                  setAllUsers(await getAllUsers());
+                  showToast("Plano alterado!");
+                }}
+              />
             </div>
         )}
 
