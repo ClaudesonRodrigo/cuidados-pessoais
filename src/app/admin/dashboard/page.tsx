@@ -49,6 +49,7 @@ import {
 } from '@/lib/adminTransactionsClient';
 import { createMasterTransaction, deleteMasterTransaction } from '@/lib/masterTransactionsClient';
 import { buildProfileSchedule, readLunchInterval } from '@/lib/adminProfileSchedule';
+import { formatBusinessDateTime } from '@/lib/timezone';
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""; 
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
@@ -571,9 +572,10 @@ export default function DashboardPage() {
                     <div className="flex justify-between items-center mb-8"><h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2"><FaCalendarDay className="text-purple-400"/> {adminViewId ? `Agenda de ${pageData?.title}` : 'Minha Agenda'}</h3><button onClick={fetchUpcoming} className="text-xs font-bold text-purple-600 hover:underline">Atualizar</button></div>
                     {isLoadingAppointments ? <div className="text-center py-20 text-purple-300 animate-pulse uppercase text-[10px] tracking-widest">Consultando...</div> : <div className="space-y-4">{appointments.length === 0 ? <p className="text-center text-gray-400 py-10 font-bold uppercase text-[10px] tracking-widest">Agenda Limpa</p> : appointments.map(app => {
                         let start; try { start = (app.startAt as any).toDate ? (app.startAt as any).toDate() : new Date(app.startAt as any); } catch { start = new Date(); }
+                        const displayedStart = formatBusinessDateTime(start, pageData?.timezone);
                         return (
                             <div key={app.id} className="border border-purple-50 p-6 rounded-[2rem] flex flex-col gap-4 bg-[#fdfaf9]/50 hover:bg-white transition-all">
-                                <div className="flex justify-between items-center"><div className="flex flex-col"><span className="text-lg font-black text-gray-900 tracking-tighter">{start.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</span><span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{app.customerName}</span></div><span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${app.status === 'confirmed' ? 'bg-blue-50 text-blue-500 border-blue-100' : 'bg-gray-100 text-gray-400 border-gray-200'}`}>{app.status}</span></div>
+                                <div className="flex justify-between items-center"><div className="flex flex-col"><span className="text-[10px] font-bold text-gray-400 tracking-widest">{displayedStart.date}</span><span className="text-lg font-black text-gray-900 tracking-tighter">{displayedStart.time}</span><span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{app.customerName}</span></div><span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${app.status === 'confirmed' ? 'bg-blue-50 text-blue-500 border-blue-100' : 'bg-gray-100 text-gray-400 border-gray-200'}`}>{app.status}</span></div>
                                 <div className="text-[11px] font-medium text-gray-500 leading-relaxed border-t border-purple-50/50 pt-4">{app.serviceName} • <span className="font-bold text-purple-600">R$ {app.totalValue.toFixed(2)}</span></div>
                                 <div className="flex gap-3 mt-2">
                                     {app.status === 'pending' && <button onClick={() => handleStatusChange(app.id!, 'confirm')} className="flex-1 bg-green-500 text-white p-3 rounded-2xl text-[10px] font-black uppercase">Confirmar</button>}

@@ -59,6 +59,14 @@ test("apresentação de confirmação e histórico usa o timezone do tenant", ()
   assert.deepEqual(displayed, { date: "22/08/2026", time: "16:00" });
 });
 
+test("apresentação sem timezone configurado preserva o fallback America/Bahia", () => {
+  const displayed = formatBusinessDateTime(
+    new Date("2026-08-22T19:00:00.000Z"),
+    undefined,
+  );
+  assert.deepEqual(displayed, { date: "22/08/2026", time: "16:00" });
+});
+
 test("página usa o formatter canônico na confirmação e no histórico", async () => {
   const { readFile } = await import("node:fs/promises");
   const source = await readFile("src/app/[slug]/page.tsx", "utf8");
@@ -66,6 +74,18 @@ test("página usa o formatter canônico na confirmação e no histórico", async
   assert.equal(source.includes("start.toLocaleDateString"), false);
   assert.equal(source.includes("start.toLocaleTimeString"), false);
   assert.equal(source.includes("confirmedStart.date"), true);
+  assert.equal(source.includes("displayedStart.date"), true);
+  assert.equal(source.includes("displayedStart.time"), true);
+});
+
+test("Agenda Admin exibe data e hora com o timezone comercial do tenant", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile("src/app/admin/dashboard/page.tsx", "utf8");
+  assert.equal(source.includes("start.toLocaleTimeString"), false);
+  assert.equal(
+    source.includes("formatBusinessDateTime(start, pageData?.timezone)"),
+    true,
+  );
   assert.equal(source.includes("displayedStart.date"), true);
   assert.equal(source.includes("displayedStart.time"), true);
 });
