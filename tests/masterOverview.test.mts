@@ -8,6 +8,7 @@ import {
   getMasterOverview,
   handleMasterOverviewRequest,
   type MasterOverviewDependencies,
+  type AppointmentReference,
   type TenantReferences,
 } from "../src/lib/masterOverviewService.ts";
 import {
@@ -22,6 +23,7 @@ const NOW = new Date("2026-08-23T12:00:00.000Z");
 const validReferences = (): TenantReferences => ({
   users: [{ id: "owner-a", role: "owner", pageSlug: "salao-a" }],
   pages: [{ id: "salao-a", userId: "owner-a", slug: "salao-a" }],
+  billing: [],
 });
 
 const setup = () => {
@@ -29,10 +31,12 @@ const setup = () => {
   let verifyFailure: unknown;
   let storeFailure: unknown;
   let references = validReferences();
+  let appointments: readonly AppointmentReference[] = [];
   const calls = {
     tokens: [] as string[],
     officialUids: [] as string[],
     reads: 0,
+    appointmentReads: 0,
   };
   const identityDependencies: SuperadminIdentityDependencies = {
     async verifyIdToken(token) {
@@ -49,10 +53,14 @@ const setup = () => {
     requireSuperadminIdentity: (request) =>
       requireSuperadminIdentity(request, identityDependencies),
     store: {
-      async readTenantReferences() {
+      async readOverviewReferences() {
         calls.reads += 1;
         if (storeFailure) throw storeFailure;
         return references;
+      },
+      async readAppointments() {
+        calls.appointmentReads += 1;
+        return appointments;
       },
     },
     now: () => NOW,
@@ -63,6 +71,7 @@ const setup = () => {
     identityDependencies,
     setUid(value: unknown) { uid = value; },
     setReferences(value: TenantReferences) { references = value; },
+    setAppointments(value: readonly AppointmentReference[]) { appointments = value; },
     failVerify(error: unknown) { verifyFailure = error; },
     failStore(error: unknown) { storeFailure = error; },
   };
@@ -179,16 +188,21 @@ test("browser não escolhe autoridade por query param, email ou role", async () 
   assert.equal(context.calls.reads, 0);
 });
 
-test("superadmin oficial recebe DTO inicial sanitizado com 200", async () => {
+test("superadmin oficial recebe DTO sanitizado com 200", async () => {
   const context = setup();
   const response = await handleMasterOverviewRequest(request(), context.dependencies);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.deepEqual(await body(response), {
-    tenants: { total: 1 },
+    tenants: { total: 1, active: 0, trial: 0, blocked: 1 },
+    billing: { subscribers: 0, activeSubscriptions: 0, pastDue: 0, mrrCents: 0 },
+    appointments: { today: 0, last7Days: 0, currentMonth: 0 },
+    growth: { newTenants7Days: 0, newTenants30Days: 0 },
+    alerts: { pastDue: 0, blocked: 1, trialsEndingSoon: 0 },
     generatedAt: NOW.toISOString(),
   });
   assert.equal(context.calls.reads, 1);
+  assert.equal(context.calls.appointmentReads, 1);
 });
 
 test("tenant total exige join user-page íntegro e não faz N+1", async () => {
@@ -204,18 +218,31 @@ test("tenant total exige join user-page íntegro e não faz N+1", async () => {
       { id: "salao-b", userId: "other-owner", slug: "salao-b" },
       { id: "salao-c", userId: "customer-a", slug: "salao-c" },
     ],
+    billing: [],
   } as TenantReferences;
   assert.equal(countValidTenants(references), 1);
 
-  const calls = { reads: 0 };
+  const calls = { reads: 0, appointmentReads: 0 };
   const overview = await getMasterOverview({
-    async readTenantReferences() {
+    async readOverviewReferences() {
       calls.reads += 1;
       return references;
     },
+    async readAppointments() {
+      calls.appointmentReads += 1;
+      return [];
+    },
   }, NOW);
-  assert.deepEqual(overview, { tenants: { total: 1 }, generatedAt: NOW.toISOString() });
+  assert.deepEqual(overview, {
+    tenants: { total: 1, active: 0, trial: 0, blocked: 1 },
+    billing: { subscribers: 0, activeSubscriptions: 0, pastDue: 0, mrrCents: 0 },
+    appointments: { today: 0, last7Days: 0, currentMonth: 0 },
+    growth: { newTenants7Days: 0, newTenants30Days: 0 },
+    alerts: { pastDue: 0, blocked: 1, trialsEndingSoon: 0 },
+    generatedAt: NOW.toISOString(),
+  });
   assert.equal(calls.reads, 1);
+  assert.equal(calls.appointmentReads, 1);
   const serialized = JSON.stringify(overview);
   for (const forbidden of ["email", "phone", "secret", "owner-a", "salao-a"]) {
     assert.equal(serialized.includes(forbidden), false, forbidden);
@@ -231,6 +258,7 @@ test("falha operacional do Firestore retorna 503 sem detalhes", async () => {
   assert.match(serialized, /MASTER_OVERVIEW_UNAVAILABLE/);
   assert.equal(serialized.includes("SECRET_FIRESTORE"), false);
   assert.equal(context.calls.reads, 1);
+  assert.equal(context.calls.appointmentReads, 0);
 });
 
 test("contrato GET é fechado e autentica antes de validar query", async () => {
@@ -252,9 +280,13 @@ test("route é fina e adapter usa somente Firebase Admin com projeções fixas",
   assert.equal(adapter.includes("getAdminFirestore"), true);
   assert.equal(adapter.includes('collection("users")'), true);
   assert.equal(adapter.includes('collection("pages")'), true);
-  assert.equal(adapter.includes('.select("pageSlug", "role")'), true);
-  assert.equal(adapter.includes('.select("userId", "slug")'), true);
+  assert.equal(adapter.includes('collection("billing")'), true);
+  assert.equal(adapter.includes('collection("appointments")'), true);
+  assert.match(adapter, /\.select\([\s\S]*"pageSlug"[\s\S]*"role"[\s\S]*"createdAt"/);
+  assert.match(adapter, /\.select\([\s\S]*"userId"[\s\S]*"slug"[\s\S]*"timezone"/);
+  assert.equal(adapter.includes('.select("pageSlug", "startAt", "status")'), true);
   assert.equal(adapter.includes("firebase/firestore"), false);
-  assert.equal(service.includes("billing"), false);
-  assert.equal(service.includes("appointments"), false);
+  assert.equal(service.includes("resolveCommercialEntitlement"), false);
+  assert.equal(service.includes("customerName"), false);
+  assert.equal(service.includes("customerPhone"), false);
 });

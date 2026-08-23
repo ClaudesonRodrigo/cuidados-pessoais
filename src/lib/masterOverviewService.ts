@@ -4,34 +4,29 @@ import {
   type SuperadminIdentity,
 } from "./superadminIdentityService.ts";
 
-const PAGE_SLUG_PATTERN = /^[a-z0-9-]{3,120}$/;
-const MAX_OWNER_ID_LENGTH = 1_500;
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+import {
+  appointmentQueryRangeFor,
+  calculateMasterOverview,
+  type AppointmentQueryRange,
+  type AppointmentReference,
+  type MasterOverviewDto,
+  type OverviewReferences,
+} from "./masterOverviewMetrics.ts";
 
-export type TenantUserReference = Readonly<{
-  id: string;
-  pageSlug: unknown;
-  role: unknown;
-}>;
-
-export type TenantPageReference = Readonly<{
-  id: string;
-  userId: unknown;
-  slug: unknown;
-}>;
-
-export type TenantReferences = Readonly<{
-  users: readonly TenantUserReference[];
-  pages: readonly TenantPageReference[];
-}>;
-
-export type MasterOverviewDto = Readonly<{
-  tenants: Readonly<{ total: number }>;
-  generatedAt: string;
-}>;
+export type TenantReferences = OverviewReferences;
+export type {
+  AppointmentQueryRange,
+  AppointmentReference,
+  MasterOverviewDto,
+  OverviewReferences,
+  TenantPageReference,
+  TenantUserReference,
+} from "./masterOverviewMetrics.ts";
+export { countValidTenants } from "./masterOverviewMetrics.ts";
 
 export type MasterOverviewStore = {
-  readTenantReferences(): Promise<TenantReferences>;
+  readOverviewReferences(): Promise<OverviewReferences>;
+  readAppointments(range: AppointmentQueryRange): Promise<readonly AppointmentReference[]>;
 };
 
 export type MasterOverviewDependencies = {
@@ -60,58 +55,15 @@ const errorResponse = (error: MasterOverviewError): Response => Response.json(
   { status: error.status, headers: { "Cache-Control": "no-store" } },
 );
 
-const validOwnerId = (value: string): boolean => (
-  value.length > 0 &&
-  value.length <= MAX_OWNER_ID_LENGTH &&
-  !value.includes("/") &&
-  !CONTROL_CHARACTERS.test(value)
-);
-
-export const countValidTenants = (references: TenantReferences): number => {
-  if (!Array.isArray(references.users) || !Array.isArray(references.pages)) {
-    throw new TypeError("Referências de tenant inválidas.");
-  }
-
-  const pagesBySlug = new Map<string, TenantPageReference>();
-  for (const page of references.pages) {
-    if (
-      typeof page.id === "string" &&
-      PAGE_SLUG_PATTERN.test(page.id) &&
-      page.slug === page.id &&
-      typeof page.userId === "string" &&
-      validOwnerId(page.userId)
-    ) {
-      pagesBySlug.set(page.id, page);
-    }
-  }
-
-  const ownerIds = new Set<string>();
-  for (const user of references.users) {
-    if (
-      typeof user.id !== "string" ||
-      !validOwnerId(user.id) ||
-      user.role !== "owner" ||
-      typeof user.pageSlug !== "string" ||
-      !PAGE_SLUG_PATTERN.test(user.pageSlug)
-    ) {
-      continue;
-    }
-    const page = pagesBySlug.get(user.pageSlug);
-    if (page?.userId === user.id) ownerIds.add(user.id);
-  }
-  return ownerIds.size;
-};
-
 export const getMasterOverview = async (
   store: MasterOverviewStore,
   now = new Date(),
 ): Promise<MasterOverviewDto> => {
-  const generatedAt = new Date(now.getTime()).toISOString();
-  const references = await store.readTenantReferences();
-  return {
-    tenants: { total: countValidTenants(references) },
-    generatedAt,
-  };
+  const stableNow = new Date(now.getTime());
+  const references = await store.readOverviewReferences();
+  const range = appointmentQueryRangeFor(references, stableNow);
+  const appointments = range ? await store.readAppointments(range) : [];
+  return calculateMasterOverview(references, appointments, stableNow);
 };
 
 export const handleMasterOverviewRequest = async (
